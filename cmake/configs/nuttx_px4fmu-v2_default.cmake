@@ -116,6 +116,11 @@ set(config_module_list
 	#modules/logger
 	modules/sdlog2
 
+        #
+        # Matlab sim
+        #
+        modules/matlab_sim
+
 	#
 	# Library modules
 	#
