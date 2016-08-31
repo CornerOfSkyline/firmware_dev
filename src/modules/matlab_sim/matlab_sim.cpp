@@ -134,6 +134,76 @@ int matlab_sim_main(int argc, char *argv[])
 	exit(1);
 }
 
+MatlabSim::MatlabSim() :
+{
+    decodeInit();
+}
+
+MatlabSim::~MatlabSim()
+{
+
+}
+
+void
+MatlabSim::decodeInit(void)
+{
+    _decode_state = SIM_DECODE_SYNC1;
+    _rx_ck_a = 0;
+    _rx_ck_b = 0;
+    _rx_payload_length = 0;
+    _rx_payload_index = 0;
+}
+
+void
+MatlabSim::addByteToChecksum(const uint8_t b)
+{
+    _rx_ck_a = _rx_ck_a + b;
+    _rx_ck_b = _rx_ck_b + _rx_ck_a;
+}
+
+void
+MatlabSim::calcChecksum(const uint8_t *buffer, const uint16_t length, sim_checksum_t *checksum)
+{
+    for (uint16_t i = 0; i < length; i++) {
+        checksum->ck_a = checksum->ck_a + buffer[i];
+        checksum->ck_b = checksum->ck_b + checksum->ck_a;
+    }
+}
+
+bool
+MatlabSim::sendMessage(const uint16_t msg, const uint8_t *payload, const uint16_t length)
+{
+    sim_header_t   header = {SIM_SYNC1, SIM_SYNC2, 0, 0};
+    sim_checksum_t checksum = {0, 0};
+
+    // Populate header
+    header.msg	= msg;
+    header.length	= length;
+
+    // Calculate checksum
+    calcChecksum(((uint8_t *)&header) + 2, sizeof(header) - 2, &checksum); // skip 2 sync bytes
+
+    if (payload != nullptr) {
+        calcChecksum(payload, length, &checksum);
+    }
+
+    // Send message
+    if (write(_serial_fd, (void *)&header, sizeof(header)) != sizeof(header)) {
+        return false;
+    }
+
+    if (payload && write(_serial_fd, (void *)payload, length) != length) {
+        return false;
+    }
+
+    if (write(_serial_fd, (void *)&checksum, sizeof(checksum)) != sizeof(checksum)) {
+        return false;
+    }
+
+    return true;
+}
+
+
 int matlab_sim_thread_main(int argc, char *argv[])
 {
 
@@ -184,56 +254,6 @@ int matlab_sim_thread_main(int argc, char *argv[])
 		close(serial_fd);
 		return -1;
 	}
-
-    struct RawAccelData {
-        float temperature;
-        float x;
-        float y;
-        float z;
-    };
-
-    struct RawMagData {
-        float temperature;
-        float x;
-        float y;
-        float z;
-    };
-
-    struct RawMPUData {
-        float	accel_x;
-        float	accel_y;
-        float	accel_z;
-        float	temp;
-        float	gyro_x;
-        float	gyro_y;
-        float	gyro_z;
-    };
-
-    struct RawBaroData {
-        float pressure;
-        float altitude;
-        float temperature;
-    };
-
-    struct RawAirspeedData {
-        float temperature;
-        float diff_pressure;
-    };
-
-    struct RawGPSData {
-        int32_t lat;
-        int32_t lon;
-        int32_t alt;
-        uint16_t eph;
-        uint16_t epv;
-        uint16_t vel;
-        int16_t vn;
-        int16_t ve;
-        int16_t vd;
-        uint16_t cog;
-        uint8_t fix_type;
-        uint8_t satellites_visible;
-    };
 
 	/* subscribe to vehicle status, attitude, sensors and flow*/
 	struct accel_report accel0;
