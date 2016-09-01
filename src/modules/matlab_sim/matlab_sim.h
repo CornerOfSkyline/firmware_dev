@@ -14,8 +14,8 @@
 #include <drivers/drv_hrt.h>
 #include <drivers/drv_rc_input.h>
 #include <systemlib/perf_counter.h>
-#include <uORB/topics/optical_flow.h>
-#include <uORB/topics/distance_sensor.h>
+#include <uORB/topics/vehicle_gps_position.h>
+#include <uORB/topics/airspeed.h>
 
 #define SIM_SYNC1 0xEB
 #define SIM_SYNC2 0x90
@@ -26,7 +26,7 @@
 /* Message IDs */
 #define SIM_ID_RAW_ACCEL	0x01
 #define SIM_ID_RAW_MAG		0x02
-#define SIM_ID_RAW_MPU		0x03
+#define SIM_ID_RAW_GYRO	0x03
 #define SIM_ID_RAW_BARO		0x04
 #define SIM_ID_RAW_AIRSPEED	0x12
 #define SIM_ID_RAW_GPS      	0x21
@@ -34,7 +34,7 @@
 /* Message Classes & IDs */
 #define SIM_MSG_RAW_ACCEL              ((SIM_CLASS_RAW) | SIM_ID_RAW_ACCEL << 8)
 #define SIM_MSG_RAW_MAG                 ((SIM_CLASS_RAW) | SIM_ID_RAW_MAG << 8)
-#define SIM_MSG_RAW_MPU                 ((SIM_CLASS_RAW) | SIM_ID_RAW_MPU << 8)
+#define SIM_MSG_RAW_GYRO                 ((SIM_CLASS_RAW) | SIM_ID_RAW_GYRO << 8)
 #define SIM_MSG_RAW_BARO                ((SIM_CLASS_RAW) | SIM_ID_RAW_BARO << 8)
 #define SIM_MSG_RAW_AIRSPEED         ((SIM_CLASS_RAW) | SIM_ID_RAW_AIRSPEED << 8)
 #define SIM_MSG_RAW_GPS                   ((SIM_CLASS_RAW) | SIM_ID_RAW_GPS << 8)
@@ -72,16 +72,13 @@ typedef struct {
     float z;
 }sim_payload_rx_raw_mag_t;
 
-/* Rx raw mpu */
+/* Rx raw gyro */
 typedef struct {
-    float	accel_x;
-    float	accel_y;
-    float	accel_z;
-    float	temp;
-    float	gyro_x;
-    float	gyro_y;
-    float	gyro_z;
-}sim_payload_rx_raw_mpu_t;
+    float	temperature;
+    float	x;
+    float	y;
+    float	z;
+}sim_payload_rx_raw_gyro_t;
 
 /* Rx raw baro */
 typedef struct {
@@ -93,7 +90,8 @@ typedef struct {
 /* Rx raw airspeed */
 typedef struct {
     float temperature;
-    float diff_pressure;
+    float indicated_airspeed_m_s;
+    float true_airspeed_m_s;
 }sim_payload_rx_raw_airspeed_t;
 
 /* Rx raw gps */
@@ -115,7 +113,7 @@ typedef struct {
 /* General message and payload buffer union */
 typedef union {
     sim_payload_rx_raw_accel_t		payload_rx_raw_accel;
-    sim_payload_rx_raw_mpu_t        payload_rx_raw_mpu;
+    sim_payload_rx_raw_gyro_t       payload_rx_raw_gyro;
     sim_payload_rx_raw_mag_t        payload_rx_raw_mag;
     sim_payload_rx_raw_baro_t       payload_rx_raw_baro;
     sim_payload_rx_raw_airspeed_t   payload_rx_raw_airspeed;
@@ -193,6 +191,13 @@ private:
      */
     bool sendMessage(const uint16_t msg, const uint8_t *payload, const uint16_t length);
 
+    int payloadRxAddRawAccel(const uint8_t b);
+    int payloadRxAddRawMag(const uint8_t b);
+    int payloadRxAddRawGyro(const uint8_t b);
+    int payloadRxAddRawBaro(const uint8_t b);
+    int payloadRxAddRawAirspeed(const uint8_t b);
+    int payloadRxAddRawGps(const uint8_t b);
+
     int             _serial_fd;
     uint16_t		_rx_payload_length;
     uint16_t		_rx_payload_index;
@@ -200,6 +205,13 @@ private:
     uint8_t			_rx_ck_b;
     sim_buf_t		_buf;
     sim_decode_state_t decode_state;
+
+    struct sensor_accel_s _sensor_accel;
+    struct sensor_gyro_s _sensor_gyro;
+    struct sensor_mag_s _sensor_mag;
+    struct sensor_baro_s _sensor_baro;
+    struct airspeed_s _airspeed;
+    struct vehicle_gps_position_s vehicle_gps_position;
 	
 }
 

@@ -320,7 +320,7 @@ MatlabSim::parseChar(const uint8_t b)
             break;
 
         case SIM_MSG_RAW_MPU:
-            ret = payloadRxAddRawMpu(b); // add a RAW-MPU payload byte
+            ret = payloadRxAddRawGyro(b); // add a RAW-GYRO payload byte
             break;
 
         case SIM_MSG_RAW_BARO:
@@ -409,8 +409,8 @@ MatlabSim::payloadRxInit()
         }
         break;
 
-    case SIM_MSG_RAW_MPU:
-        if (_rx_payload_length != sizeof(sim_payload_rx_raw_mpu_t)) {
+    case SIM_MSG_RAW_GYRO:
+        if (_rx_payload_length != sizeof(sim_payload_rx_raw_gyro_t)) {
             _rx_state = SIM_RXMSG_ERROR_LENGTH;
 
         }
@@ -470,6 +470,205 @@ MatlabSim::payloadRxInit()
     return ret;
 }
 
+/**
+ * Add payload rx byte
+ */
+int	// -1 = error, 0 = ok, 1 = payload completed
+MatlabSim::payloadRxAdd(const uint8_t b)
+{
+    int ret = 0;
+    uint8_t *p_buf = (uint8_t *)&_buf;
+
+    p_buf[_rx_payload_index] = b;
+
+    if (++_rx_payload_index >= _rx_payload_length) {
+        ret = 1;	// payload received completely
+    }
+
+    return ret;
+}
+
+/**
+ * Add RAW-ACCEL payload rx byte
+ */
+int	// -1 = error, 0 = ok, 1 = payload completed
+MatlabSim::payloadRxAddRawAccel(const uint8_t b)
+{
+    int ret = 0;
+    uint8_t *p_buf = (uint8_t *)&_buf;
+
+    if (_rx_payload_index < sizeof(sim_payload_rx_raw_accel_t)) {
+        // Fill Part 1 buffer
+        p_buf[_rx_payload_index] = b;
+
+    } else {
+        if (_rx_payload_index == sizeof(sim_payload_rx_raw_accel_t)) {
+            _sensor_accel.timestamp = hrt_absolute_time();
+            _sensor_accel.x = _buf.payload_rx_raw_accel.x;
+            _sensor_accel.y = _buf.payload_rx_raw_accel.y;
+            _sensor_accel.z = _buf.payload_rx_raw_accel.z;
+        }
+    }
+
+    if (++_rx_payload_index >= _rx_payload_length) {
+        ret = 1;	// payload received completely
+    }
+
+    return ret;
+}
+
+/**
+ * Add RAW-MAG payload rx byte
+ */
+int	// -1 = error, 0 = ok, 1 = payload completed
+MatlabSim::payloadRxAddRawMag(const uint8_t b)
+{
+    int ret = 0;
+    uint8_t *p_buf = (uint8_t *)&_buf;
+
+    if (_rx_payload_index < sizeof(sim_payload_rx_raw_mag_t)) {
+        // Fill Part 1 buffer
+        p_buf[_rx_payload_index] = b;
+
+    } else {
+        if (_rx_payload_index == sizeof(sim_payload_rx_raw_mag_t)) {
+            _sensor_mag.timestamp = hrt_absolute_time();
+            _sensor_mag.x = _buf.payload_rx_raw_mag.x;
+            _sensor_mag.y = _buf.payload_rx_raw_mag.y;
+            _sensor_mag.z = _buf.payload_rx_raw_mag.z;
+        }
+    }
+
+    if (++_rx_payload_index >= _rx_payload_length) {
+        ret = 1;	// payload received completely
+    }
+
+    return ret;
+}
+
+/**
+ * Add RAW-GYRO payload rx byte
+ */
+int	// -1 = error, 0 = ok, 1 = payload completed
+MatlabSim::payloadRxAddRawGyro(const uint8_t b)
+{
+    int ret = 0;
+    uint8_t *p_buf = (uint8_t *)&_buf;
+
+    if (_rx_payload_index < sizeof(sim_payload_rx_raw_gyro_t)) {
+        // Fill Part 1 buffer
+        p_buf[_rx_payload_index] = b;
+
+    } else {
+        if (_rx_payload_index == sizeof(sim_payload_rx_raw_gyro_t)) {
+            _sensor_gyro.timestamp = hrt_absolute_time();
+            _sensor_gyro.x = _buf.payload_rx_raw_gyro.x;
+            _sensor_gyro.y = _buf.payload_rx_raw_gyro.y;
+            _sensor_gyro.z = _buf.payload_rx_raw_gyro.z;
+        }
+    }
+
+    if (++_rx_payload_index >= _rx_payload_length) {
+        ret = 1;	// payload received completely
+    }
+
+    return ret;
+}
+
+/**
+ * Add RAW-BARO payload rx byte
+ */
+int	// -1 = error, 0 = ok, 1 = payload completed
+MatlabSim::payloadRxAddRawBaro(const uint8_t b)
+{
+    int ret = 0;
+    uint8_t *p_buf = (uint8_t *)&_buf;
+
+    if (_rx_payload_index < sizeof(sim_payload_rx_raw_baro_t)) {
+        // Fill Part 1 buffer
+        p_buf[_rx_payload_index] = b;
+
+    } else {
+        if (_rx_payload_index == sizeof(sim_payload_rx_raw_baro_t)) {
+            _sensor_baro.timestamp = hrt_absolute_time();
+            _sensor_baro.pressure = _buf.payload_rx_raw_baro.pressure;
+            _sensor_baro.altitude = _buf.payload_rx_raw_baro.altitude;
+        }
+    }
+
+    if (++_rx_payload_index >= _rx_payload_length) {
+        ret = 1;	// payload received completely
+    }
+
+    return ret;
+}
+
+/**
+ * Add RAW-AIRSPEED payload rx byte
+ */
+int	// -1 = error, 0 = ok, 1 = payload completed
+MatlabSim::payloadRxAddRawAirspeed(const uint8_t b)
+{
+    int ret = 0;
+    uint8_t *p_buf = (uint8_t *)&_buf;
+
+    if (_rx_payload_index < sizeof(sim_payload_rx_raw_airspeed_t)) {
+        // Fill Part 1 buffer
+        p_buf[_rx_payload_index] = b;
+
+    } else {
+        if (_rx_payload_index == sizeof(sim_payload_rx_raw_airspeed_t)) {
+            _airspeed.timestamp = hrt_absolute_time();
+            _airspeed.indicated_airspeed_m_s = _buf.payload_rx_raw_airspeed.indicated_airspeed_m_s;
+            _airspeed.true_airspeed_m_s = _buf.payload_rx_raw_airspeed.true_airspeed_m_s;
+            _airspeed.true_airspeed_unfiltered_m_s = _buf.payload_rx_raw_airspeed.true_airspeed_m_s;
+        }
+    }
+
+    if (++_rx_payload_index >= _rx_payload_length) {
+        ret = 1;	// payload received completely
+    }
+
+    return ret;
+}
+
+/**
+ * Add RAW-GPS payload rx byte
+ */
+int	// -1 = error, 0 = ok, 1 = payload completed
+MatlabSim::payloadRxAddRawGps(const uint8_t b)
+{
+    int ret = 0;
+    uint8_t *p_buf = (uint8_t *)&_buf;
+
+    if (_rx_payload_index < sizeof(sim_payload_rx_raw_gps_t)) {
+        // Fill Part 1 buffer
+        p_buf[_rx_payload_index] = b;
+
+    } else {
+        if (_rx_payload_index == sizeof(sim_payload_rx_raw_gps_t)) {
+            vehicle_gps_position.timestamp = hrt_absolute_time();
+            vehicle_gps_position.lat = _buf.payload_rx_raw_gps.lat;
+            vehicle_gps_position.lon = _buf.payload_rx_raw_gps.lon;
+            vehicle_gps_position.alt = _buf.payload_rx_raw_gps.alt;
+            vehicle_gps_position.eph = _buf.payload_rx_raw_gps.eph;
+            vehicle_gps_position.epv = _buf.payload_rx_raw_gps.epv;
+            vehicle_gps_position.vel_n_m_s = _buf.payload_rx_raw_gps.vn;
+            vehicle_gps_position.vel_e_m_s = _buf.payload_rx_raw_gps.ve;
+            vehicle_gps_position.vel_d_m_s = _buf.payload_rx_raw_gps.vd;
+            vehicle_gps_position.vel_m_s = _buf.payload_rx_raw_gps.vel;
+            vehicle_gps_position.fix_type = _buf.payload_rx_raw_gps.fix_type;
+            vehicle_gps_position.satellites_used = _buf.payload_rx_raw_gps.satellites_visible;
+
+        }
+    }
+
+    if (++_rx_payload_index >= _rx_payload_length) {
+        ret = 1;	// payload received completely
+    }
+
+    return ret;
+}
 
 int matlab_sim_thread_main(int argc, char *argv[])
 {
