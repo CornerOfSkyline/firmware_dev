@@ -20,6 +20,25 @@
 #define SIM_SYNC1 0xEB
 #define SIM_SYNC2 0x90
 
+/* Message Classes */
+#define SIM_CLASS_RAW		0x01
+
+/* Message IDs */
+#define SIM_ID_RAW_ACCEL	0x01
+#define SIM_ID_RAW_MAG		0x02
+#define SIM_ID_RAW_MPU		0x03
+#define SIM_ID_RAW_BARO		0x04
+#define SIM_ID_RAW_AIRSPEED	0x12
+#define SIM_ID_RAW_GPS      	0x21
+
+/* Message Classes & IDs */
+#define SIM_MSG_RAW_ACCEL              ((SIM_CLASS_RAW) | SIM_ID_RAW_ACCEL << 8)
+#define SIM_MSG_RAW_MAG                 ((SIM_CLASS_RAW) | SIM_ID_RAW_MAG << 8)
+#define SIM_MSG_RAW_MPU                 ((SIM_CLASS_RAW) | SIM_ID_RAW_MPU << 8)
+#define SIM_MSG_RAW_BARO                ((SIM_CLASS_RAW) | SIM_ID_RAW_BARO << 8)
+#define SIM_MSG_RAW_AIRSPEED         ((SIM_CLASS_RAW) | SIM_ID_RAW_AIRSPEED << 8)
+#define SIM_MSG_RAW_GPS                   ((SIM_CLASS_RAW) | SIM_ID_RAW_GPS << 8)
+
 /*** sim protocol binary message and payload definitions ***/
 #pragma pack(push, 1)
 
@@ -118,6 +137,14 @@ typedef enum {
     SIM_DECODE_CHKSUM1,
     SIM_DECODE_CHKSUM2
 } sim_decode_state_t;
+
+/* Rx message state */
+typedef enum {
+    SIM_RXMSG_IGNORE = 0,
+    SIM_RXMSG_HANDLE,
+    SIM_RXMSG_DISABLE,
+    SIM_RXMSG_ERROR_LENGTH
+} sim_rxmsg_state_t;
 
 
 class MatlabSim
