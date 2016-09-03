@@ -16,6 +16,9 @@
 #include <systemlib/perf_counter.h>
 #include <uORB/topics/vehicle_gps_position.h>
 #include <uORB/topics/airspeed.h>
+#include <uORB/topics/actuator_outputs.h>
+
+extern "C" __EXPORT int matlab_sim_main(int argc, char *argv[]);
 
 #define SIM_SYNC1 0xEB
 #define SIM_SYNC2 0x90
@@ -28,8 +31,10 @@
 #define SIM_ID_RAW_MAG		0x02
 #define SIM_ID_RAW_GYRO	0x03
 #define SIM_ID_RAW_BARO		0x04
-#define SIM_ID_RAW_AIRSPEED	0x12
-#define SIM_ID_RAW_GPS      	0x21
+#define SIM_ID_RAW_AIRSPEED	0x05
+#define SIM_ID_RAW_GPS      	0x06
+#define SIM_ID_RAW_PWM_M      0x07
+#define SIM_ID_RAW_PWM_A      0x08
 
 /* Message Classes & IDs */
 #define SIM_MSG_RAW_ACCEL              ((SIM_CLASS_RAW) | SIM_ID_RAW_ACCEL << 8)
@@ -38,6 +43,8 @@
 #define SIM_MSG_RAW_BARO                ((SIM_CLASS_RAW) | SIM_ID_RAW_BARO << 8)
 #define SIM_MSG_RAW_AIRSPEED         ((SIM_CLASS_RAW) | SIM_ID_RAW_AIRSPEED << 8)
 #define SIM_MSG_RAW_GPS                   ((SIM_CLASS_RAW) | SIM_ID_RAW_GPS << 8)
+#define SIM_MSG_RAW_PWM_M                 ((SIM_CLASS_RAW) | SIM_ID_RAW_PWM_M << 8)
+#define SIM_MSG_RAW_PWM_A                 ((SIM_CLASS_RAW) | SIM_ID_RAW_PWM_A << 8)
 
 /*** sim protocol binary message and payload definitions ***/
 #pragma pack(push, 1)
@@ -110,6 +117,18 @@ typedef struct {
     uint8_t satellites_visible;
 }sim_payload_rx_raw_gps_t;
 
+/* Tx raw pwm */
+typedef struct {
+    float pwm1;
+    float pwm2;
+    float pwm3;
+    float pwm4;
+    float pwm5;
+    float pwm6;
+    float pwm7;
+    float pwm8;
+}sim_payload_tx_raw_pwm_t;
+
 /* General message and payload buffer union */
 typedef union {
     sim_payload_rx_raw_accel_t		payload_rx_raw_accel;
@@ -118,6 +137,8 @@ typedef union {
     sim_payload_rx_raw_baro_t       payload_rx_raw_baro;
     sim_payload_rx_raw_airspeed_t   payload_rx_raw_airspeed;
     sim_payload_rx_raw_gps_t        payload_rx_raw_gps;
+    sim_payload_tx_raw_pwm_t        payload_tx_raw_pwm_m;
+    sim_payload_tx_raw_pwm_t        payload_tx_raw_pwm_a;
 } sim_buf_t;
 
 #pragma pack(pop)
@@ -149,11 +170,16 @@ class MatlabSim
 {
 public:
     MatlabSim();
-	static int start(int argc, char *argv[]);
+    int start(int argc, char *argv[]);
+    int stop();
     virtual ~MatlabSim();
     int receive(unsigned timeout);
 
 private:
+
+    static void task_main_trampoline(int argc, char *argv[]);
+
+    int task_main(int argc, char *argv[]);
 
     /**
      * Parse the binary sim packet
@@ -191,6 +217,14 @@ private:
      */
     bool sendMessage(const uint16_t msg, const uint8_t *payload, const uint16_t length);
 
+    int read(uint8_t *buf, int buf_length, int timeout);
+
+    int write(const void *buf, int buf_length);
+
+    bool copy_if_updated_multi(orb_id_t topic, int multi_instance, int *handle, void *buffer);
+
+    void calcChecksum(const uint8_t *buffer, const uint16_t length, sim_checksum_t *checksum);
+
     int payloadRxAddRawAccel(const uint8_t b);
     int payloadRxAddRawMag(const uint8_t b);
     int payloadRxAddRawGyro(const uint8_t b);
@@ -198,21 +232,42 @@ private:
     int payloadRxAddRawAirspeed(const uint8_t b);
     int payloadRxAddRawGps(const uint8_t b);
 
+
+
+    bool _task_should_exit;
     int             _serial_fd;
     uint16_t		_rx_payload_length;
     uint16_t		_rx_payload_index;
     uint8_t			_rx_ck_a;
     uint8_t			_rx_ck_b;
     sim_buf_t		_buf;
-    sim_decode_state_t decode_state;
+    sim_decode_state_t _decode_state;
+    int             _sim_task;
+    uint16_t		_rx_msg;
+    sim_rxmsg_state_t	_rx_state;
+
+    // uORB publisher handlers
+    orb_advert_t _accel_pub;
+    orb_advert_t _baro_pub;
+    orb_advert_t _gyro_pub;
+    orb_advert_t _mag_pub;
+    orb_advert_t _airspeed_pub;
+    orb_advert_t _gps_pub;
+    orb_advert_t _pwm_pub;  
+    int act_outputs_sub;
+    int act_outputs_1_sub;
+
 
     struct sensor_accel_s _sensor_accel;
     struct sensor_gyro_s _sensor_gyro;
     struct sensor_mag_s _sensor_mag;
     struct sensor_baro_s _sensor_baro;
     struct airspeed_s _airspeed;
-    struct vehicle_gps_position_s vehicle_gps_position;
+    struct vehicle_gps_position_s _vehicle_gps_position;
+    struct actuator_outputs_s _actuator_outputs;
+    struct actuator_outputs_s _actuator_outputs_1;
+
 	
-}
+};
 
 #endif /* MATLAB_SIM_H_ */

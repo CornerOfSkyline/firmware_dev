@@ -59,84 +59,28 @@
 #include <systemlib/systemlib.h>
 #include <systemlib/err.h>
 #include <poll.h>
+#include <geo/geo.h>
+#include <mathlib/mathlib.h>
 #include "matlab_sim.h"
+
+#define SWAP16(X)	((((X) >>  8) & 0x00ff) | (((X) << 8) & 0xff00))
 
 #define SIM_WAIT_BEFORE_READ	20		// ms, wait before reading to save read() calls
 #define SIM_READ_BUFFER_SIZE 128
 #define SIM_PACKET_TIMEOUT	2		// ms, if now data during this delay assume that full update received
 
-__EXPORT int matlab_sim_main(int argc, char *argv[]);
-static bool thread_should_exit = false;		/**< Daemon exit flag */
-static bool thread_running = false;		/**< Daemon status flag */
-static int daemon_task;				/**< Handle of daemon task / thread */
+uint8_t buffert[24];
 
-int matlab_sim_thread_main(int argc, char *argv[]);
-static void usage(const char *reason);
+static const float mg2ms2 = CONSTANTS_ONE_G / 1000.0f;
 
-static uint8_t buffer[24];
-
-static void usage(const char *reason)
+namespace Matlab_Sim
 {
-	if (reason) {
-		fprintf(stderr, "%s\n", reason);
-	}
-
-	fprintf(stderr, "usage: daemon {start|stop|status} [-p <additional params>]\n\n");
-	exit(1);
+    MatlabSim *sim_control;
 }
 
-/**
- * The daemon app only briefly exists to start
- * the background job. The stack size assigned in the
- * Makefile does only apply to this management task.
- *
- * The actual stack size should be set in the call
- * to px4_task_spawn_cmd().
- */
-int matlab_sim_main(int argc, char *argv[])
-{
-	if (argc < 2) {
-		usage("missing command");
-	}
-
-	if (!strcmp(argv[1], "start")) {
-		if (thread_running) {
-			warnx("already running\n");
-			/* this is not an error */
-			exit(0);
-		}
-
-		thread_should_exit = false;
-        daemon_task = px4_task_spawn_cmd("matlab_sim",
-						 SCHED_DEFAULT,
-						 SCHED_PRIORITY_MAX - 5,
-						 2000,
-                         matlab_sim_thread_main,
-						 (argv) ? (char *const *)&argv[2] : (char *const *)NULL);
-		exit(0);
-	}
-
-	if (!strcmp(argv[1], "stop")) {
-		thread_should_exit = true;
-		exit(0);
-	}
-
-	if (!strcmp(argv[1], "status")) {
-		if (thread_running) {
-			warnx("running");
-
-		} else {
-			warnx("stopped");
-		}
-
-		exit(0);
-	}
-
-	usage("unrecognized command");
-	exit(1);
-}
-
-MatlabSim::MatlabSim() :
+MatlabSim::MatlabSim():
+    _task_should_exit(false),
+    _sim_task(-1)
 {
     decodeInit();
 }
@@ -172,39 +116,6 @@ MatlabSim::calcChecksum(const uint8_t *buffer, const uint16_t length, sim_checks
     }
 }
 
-bool
-MatlabSim::sendMessage(const uint16_t msg, const uint8_t *payload, const uint16_t length)
-{
-    sim_header_t   header = {SIM_SYNC1, SIM_SYNC2, 0, 0};
-    sim_checksum_t checksum = {0, 0};
-
-    // Populate header
-    header.msg	= msg;
-    header.length	= length;
-
-    // Calculate checksum
-    calcChecksum(((uint8_t *)&header) + 2, sizeof(header) - 2, &checksum); // skip 2 sync bytes
-
-    if (payload != nullptr) {
-        calcChecksum(payload, length, &checksum);
-    }
-
-    // Send message
-    if (write(_serial_fd, (void *)&header, sizeof(header)) != sizeof(header)) {
-        return false;
-    }
-
-    if (payload && write(_serial_fd, (void *)payload, length) != length) {
-        return false;
-    }
-
-    if (write(_serial_fd, (void *)&checksum, sizeof(checksum)) != sizeof(checksum)) {
-        return false;
-    }
-
-    return true;
-}
-
 int	// -1 = error, 0 = no message handled, 1 = message handled, 2 = sat info message handled
 MatlabSim::receive(unsigned timeout)
 {
@@ -213,12 +124,10 @@ MatlabSim::receive(unsigned timeout)
     /* timeout additional to poll */
     hrt_abstime time_started = hrt_absolute_time();
 
-    int handled = 0;
-
     while (true) {
 
         /* Wait for only SIM_PACKET_TIMEOUT if something already received. */
-        int ret = read(buf, sizeof(buf), ready_to_return ? SIM_PACKET_TIMEOUT : timeout);
+        int ret = read(buf, sizeof(buf), timeout);
 
         if (ret < 0) {
             /* something went wrong when polling or reading */
@@ -227,22 +136,52 @@ MatlabSim::receive(unsigned timeout)
 
         } else if (ret == 0) {
 
-            }
 
         } else {
 
             /* pass received bytes to the packet decoder */
             for (int i = 0; i < ret; i++) {
-                handled |= parseChar(buf[i]);
+                parseChar(buf[i]);
             }
         }
 
         /* abort after timeout if no useful packets received */
         if (time_started + timeout * 1000 < hrt_absolute_time()) {
-            warnx("timed out, returning");
+            //warnx("timed out, returning");
             return -1;
         }
     }
+}
+
+int
+MatlabSim::read(uint8_t *buf, int buf_length, int timeout)
+{
+    const int max_timeout = 50;
+
+    pollfd fds[1];
+    fds[0].fd = _serial_fd;
+    fds[0].events = POLLIN;
+
+    int ret = poll(fds, sizeof(fds) / sizeof(fds[0]), math::min(max_timeout, timeout));
+
+    if (ret > 0) {
+        /* if we have new data from GPS, go handle it */
+        if (fds[0].revents & POLLIN) {
+            /*
+             * We are here because poll says there is some data, so this
+             * won't block even on a blocking device. But don't read immediately
+             * by 1-2 bytes, wait for some more data to save expensive read() calls.
+             * If more bytes are available, we'll go back to poll() again.
+             */
+            usleep(SIM_WAIT_BEFORE_READ * 1000);
+            ret = ::read(_serial_fd, buf, buf_length);
+
+        } else {
+            ret = -1;
+        }
+    }
+
+    return ret;
 }
 
 int	// 0 = decoding, 1 = message handled, 2 = sat info message handled
@@ -250,12 +189,15 @@ MatlabSim::parseChar(const uint8_t b)
 {
     int ret = 0;
 
+    warnx("parseChar %x",b);
+
     switch (_decode_state) {
 
     /* Expecting Sync1 */
     case SIM_DECODE_SYNC1:
         if (b == SIM_SYNC1) {	// Sync1 found --> expecting Sync2
             _decode_state = SIM_DECODE_SYNC2;
+            warnx("sync1");
         }
         break;
 
@@ -263,6 +205,7 @@ MatlabSim::parseChar(const uint8_t b)
     case SIM_DECODE_SYNC2:
         if (b == SIM_SYNC2) {	// Sync2 found --> expecting Class
             _decode_state = SIM_DECODE_CLASS;
+            warnx("sync2");
 
         } else {		// Sync1 not followed by Sync2: reset parser
             decodeInit();
@@ -319,7 +262,7 @@ MatlabSim::parseChar(const uint8_t b)
             ret = payloadRxAddRawMag(b);	// add a RAW-MAG payload byte
             break;
 
-        case SIM_MSG_RAW_MPU:
+        case SIM_MSG_RAW_GYRO:
             ret = payloadRxAddRawGyro(b); // add a RAW-GYRO payload byte
             break;
 
@@ -438,7 +381,7 @@ MatlabSim::payloadRxInit()
         break;
 
     default:
-        _rx_state = UBX_RXMSG_DISABLE;	// disable all other messages
+        _rx_state = SIM_RXMSG_DISABLE;	// disable all other messages
         break;
     }
 
@@ -504,6 +447,9 @@ MatlabSim::payloadRxAddRawAccel(const uint8_t b)
     } else {
         if (_rx_payload_index == sizeof(sim_payload_rx_raw_accel_t)) {
             _sensor_accel.timestamp = hrt_absolute_time();
+            _sensor_accel.x_raw = _buf.payload_rx_raw_accel.x / mg2ms2;
+            _sensor_accel.y_raw = _buf.payload_rx_raw_accel.y / mg2ms2;
+            _sensor_accel.z_raw = _buf.payload_rx_raw_accel.z / mg2ms2;
             _sensor_accel.x = _buf.payload_rx_raw_accel.x;
             _sensor_accel.y = _buf.payload_rx_raw_accel.y;
             _sensor_accel.z = _buf.payload_rx_raw_accel.z;
@@ -533,6 +479,9 @@ MatlabSim::payloadRxAddRawMag(const uint8_t b)
     } else {
         if (_rx_payload_index == sizeof(sim_payload_rx_raw_mag_t)) {
             _sensor_mag.timestamp = hrt_absolute_time();
+            _sensor_mag.x_raw = _buf.payload_rx_raw_mag.x * 1000.0f;
+            _sensor_mag.y_raw = _buf.payload_rx_raw_mag.y * 1000.0f;
+            _sensor_mag.z_raw = _buf.payload_rx_raw_mag.z * 1000.0f;
             _sensor_mag.x = _buf.payload_rx_raw_mag.x;
             _sensor_mag.y = _buf.payload_rx_raw_mag.y;
             _sensor_mag.z = _buf.payload_rx_raw_mag.z;
@@ -562,6 +511,9 @@ MatlabSim::payloadRxAddRawGyro(const uint8_t b)
     } else {
         if (_rx_payload_index == sizeof(sim_payload_rx_raw_gyro_t)) {
             _sensor_gyro.timestamp = hrt_absolute_time();
+            _sensor_gyro.x_raw = _buf.payload_rx_raw_gyro.x * 1000.0f;
+            _sensor_gyro.y_raw = _buf.payload_rx_raw_gyro.y * 1000.0f;
+            _sensor_gyro.z_raw = _buf.payload_rx_raw_gyro.z * 1000.0f;
             _sensor_gyro.x = _buf.payload_rx_raw_gyro.x;
             _sensor_gyro.y = _buf.payload_rx_raw_gyro.y;
             _sensor_gyro.z = _buf.payload_rx_raw_gyro.z;
@@ -647,18 +599,18 @@ MatlabSim::payloadRxAddRawGps(const uint8_t b)
 
     } else {
         if (_rx_payload_index == sizeof(sim_payload_rx_raw_gps_t)) {
-            vehicle_gps_position.timestamp = hrt_absolute_time();
-            vehicle_gps_position.lat = _buf.payload_rx_raw_gps.lat;
-            vehicle_gps_position.lon = _buf.payload_rx_raw_gps.lon;
-            vehicle_gps_position.alt = _buf.payload_rx_raw_gps.alt;
-            vehicle_gps_position.eph = _buf.payload_rx_raw_gps.eph;
-            vehicle_gps_position.epv = _buf.payload_rx_raw_gps.epv;
-            vehicle_gps_position.vel_n_m_s = _buf.payload_rx_raw_gps.vn;
-            vehicle_gps_position.vel_e_m_s = _buf.payload_rx_raw_gps.ve;
-            vehicle_gps_position.vel_d_m_s = _buf.payload_rx_raw_gps.vd;
-            vehicle_gps_position.vel_m_s = _buf.payload_rx_raw_gps.vel;
-            vehicle_gps_position.fix_type = _buf.payload_rx_raw_gps.fix_type;
-            vehicle_gps_position.satellites_used = _buf.payload_rx_raw_gps.satellites_visible;
+            _vehicle_gps_position.timestamp = hrt_absolute_time();
+            _vehicle_gps_position.lat = _buf.payload_rx_raw_gps.lat;
+            _vehicle_gps_position.lon = _buf.payload_rx_raw_gps.lon;
+            _vehicle_gps_position.alt = _buf.payload_rx_raw_gps.alt;
+            _vehicle_gps_position.eph = _buf.payload_rx_raw_gps.eph;
+            _vehicle_gps_position.epv = _buf.payload_rx_raw_gps.epv;
+            _vehicle_gps_position.vel_n_m_s = _buf.payload_rx_raw_gps.vn;
+            _vehicle_gps_position.vel_e_m_s = _buf.payload_rx_raw_gps.ve;
+            _vehicle_gps_position.vel_d_m_s = _buf.payload_rx_raw_gps.vd;
+            _vehicle_gps_position.vel_m_s = _buf.payload_rx_raw_gps.vel;
+            _vehicle_gps_position.fix_type = _buf.payload_rx_raw_gps.fix_type;
+            _vehicle_gps_position.satellites_used = _buf.payload_rx_raw_gps.satellites_visible;
 
         }
     }
@@ -670,172 +622,346 @@ MatlabSim::payloadRxAddRawGps(const uint8_t b)
     return ret;
 }
 
-int matlab_sim_thread_main(int argc, char *argv[])
+/**
+ * Finish payload rx
+ */
+int	// 0 = no message handled, 1 = message handled, 2 = sat info message handled
+MatlabSim::payloadRxDone(void)
 {
+    int ret = 0;
 
-	if (argc < 2) {
-		errx(1, "need a serial port name as argument");
-	}
+    // return if no message handled
+    if (_rx_state != SIM_RXMSG_HANDLE) {
+        return ret;
+    }
 
-	const char *uart_name = argv[1];
+    // handle message
+    switch (_rx_msg) {
 
-	warnx("opening port %s", uart_name);
+    case SIM_MSG_RAW_ACCEL:
+        int accel_multi;
+        orb_publish_auto(ORB_ID(sensor_accel), &_accel_pub, &_sensor_accel, &accel_multi, ORB_PRIO_HIGH);
+        ret = 1;
+        break;
 
-	int serial_fd = open(uart_name, O_RDWR | O_NOCTTY);
+    case SIM_MSG_RAW_MAG:
+        int mag_multi;
+        orb_publish_auto(ORB_ID(sensor_mag), &_mag_pub, &_sensor_mag, &mag_multi, ORB_PRIO_HIGH);
+        ret = 1;
+        break;
+
+    case SIM_MSG_RAW_GYRO:
+        int gyro_multi;
+        orb_publish_auto(ORB_ID(sensor_gyro), &_gyro_pub, &_sensor_gyro, &gyro_multi, ORB_PRIO_HIGH);
+        ret = 1;
+        break;
+
+    case SIM_MSG_RAW_BARO:
+        int baro_multi;
+        orb_publish_auto(ORB_ID(sensor_baro), &_baro_pub, &_sensor_baro, &baro_multi, ORB_PRIO_HIGH);
+        ret = 1;
+        break;
+
+    case SIM_MSG_RAW_AIRSPEED:
+        int airspeed_multi;
+        orb_publish_auto(ORB_ID(airspeed), &_airspeed_pub, &_airspeed, &airspeed_multi, ORB_PRIO_HIGH);
+        ret = 1;
+        break;
+
+    case SIM_MSG_RAW_GPS:
+        int gps_multi;
+        orb_publish_auto(ORB_ID(vehicle_gps_position), &_gps_pub, &_airspeed, &gps_multi, ORB_PRIO_HIGH);
+        ret = 1;
+        break;
+
+    default:
+        break;
+    }
+
+    return ret;
+}
+
+bool
+MatlabSim::sendMessage(const uint16_t msg, const uint8_t *payload, const uint16_t length)
+{
+    sim_header_t   header = {SIM_SYNC1, SIM_SYNC2, 0, 0};
+    sim_checksum_t checksum = {0, 0};
+
+    // Populate header
+    header.msg	= msg;
+    header.length	= length;
+
+    warnx("length %d",length);
+
+    // Calculate checksum
+    calcChecksum(((uint8_t *)&header) + 2, sizeof(header) - 2, &checksum); // skip 2 sync bytes
+
+    if (payload != nullptr) {
+        calcChecksum(payload, length, &checksum);
+        warnx("checksum");
+    }
+
+    // Send message
+    if (write((void *)&header, sizeof(header)) != sizeof(header)) {
+        warnx("send header error.");
+        return false;
+    }
+
+    if (payload && write((void *)payload, length) != length) {
+        warnx("send payload error.");
+        return false;
+    }
+
+    if (write((void *)&checksum, sizeof(checksum)) != sizeof(checksum)) {
+        warnx("send checksum error.");
+        return false;
+    }
+
+    return true;
+}
+
+int
+MatlabSim::write(const void *buf, int buf_length)
+{
+    return ::write(_serial_fd, buf, (size_t)buf_length);
+}
+
+bool
+MatlabSim::copy_if_updated_multi(orb_id_t topic, int multi_instance, int *handle, void *buffer)
+{
+    bool updated = false;
+
+    if (*handle < 0) {
+
+        if (OK == orb_exists(topic, multi_instance))
+
+        {
+            *handle = orb_subscribe_multi(topic, multi_instance);
+            /* copy first data */
+            if (*handle >= 0) {
+
+                /* but only if it has really been updated */
+                orb_check(*handle, &updated);
+
+                if (updated) {
+                    orb_copy(topic, *handle, buffer);
+                }
+            }
+        }
+    } else {
+        orb_check(*handle, &updated);
+
+        if (updated) {
+            orb_copy(topic, *handle, buffer);
+        }
+    }
+
+    return updated;
+}
+
+int
+MatlabSim::task_main(int argc, char *argv[])
+{
+    if (argc < 2) {
+        errx(1, "need a serial port name as argument");
+    }
+
+    const char *uart_name = argv[1];
+
+    warnx("opening port %s", uart_name);
+
+    _serial_fd = open(uart_name, O_RDWR | O_NOCTTY);
 
     unsigned speed = 115200;
 
-	if (serial_fd < 0) {
-		err(1, "failed to open port: %s", uart_name);
-	}
+    if (_serial_fd < 0) {
+        err(1, "failed to open port: %s", uart_name);
+    }
 
-	/* Try to set baud rate */
-	struct termios uart_config;
-	int termios_state;
+    /* Try to set baud rate */
+    struct termios uart_config;
+    int termios_state;
 
-	/* Back up the original uart configuration to restore it after exit */
-	if ((termios_state = tcgetattr(serial_fd, &uart_config)) < 0) {
-		warnx("ERR GET CONF %s: %d\n", uart_name, termios_state);
-		close(serial_fd);
-		return -1;
-	}
+    /* Back up the original uart configuration to restore it after exit */
+    if ((termios_state = tcgetattr(_serial_fd, &uart_config)) < 0) {
+        warnx("ERR GET CONF %s: %d\n", uart_name, termios_state);
+        close(_serial_fd);
+        return -1;
+    }
 
-	/* Clear ONLCR flag (which appends a CR for every LF) */
-	uart_config.c_oflag &= ~ONLCR;
+    /* Clear ONLCR flag (which appends a CR for every LF) */
+    uart_config.c_oflag &= ~ONLCR;
 
-	/* USB serial is indicated by /dev/ttyACM0*/
-	if (strcmp(uart_name, "/dev/ttyACM0") != OK && strcmp(uart_name, "/dev/ttyACM1") != OK) {
+    /* USB serial is indicated by /dev/ttyACM0*/
+    if (strcmp(uart_name, "/dev/ttyACM0") != OK && strcmp(uart_name, "/dev/ttyACM1") != OK) {
 
-		/* Set baud rate */
-		if (cfsetispeed(&uart_config, speed) < 0 || cfsetospeed(&uart_config, speed) < 0) {
-			warnx("ERR SET BAUD %s: %d\n", uart_name, termios_state);
-			close(serial_fd);
-			return -1;
-		}
-
-	}
-
-	if ((termios_state = tcsetattr(serial_fd, TCSANOW, &uart_config)) < 0) {
-		warnx("ERR SET CONF %s\n", uart_name);
-		close(serial_fd);
-		return -1;
-	}
-
-	/* subscribe to vehicle status, attitude, sensors and flow*/
-	struct accel_report accel0;
-	struct accel_report accel1;
-	struct gyro_report gyro0;
-	struct gyro_report gyro1;
-
-	/* subscribe to parameter changes */
-	int accel0_sub = orb_subscribe_multi(ORB_ID(sensor_accel), 0);
-	int accel1_sub = orb_subscribe_multi(ORB_ID(sensor_accel), 1);
-	int gyro0_sub = orb_subscribe_multi(ORB_ID(sensor_gyro), 0);
-	int gyro1_sub = orb_subscribe_multi(ORB_ID(sensor_gyro), 1);
-
-	thread_running = true;
-
-	while (!thread_should_exit) {
-
-        int ret = receive_sim_data(buffer,100,20);
-
-        if(ret < 0){
-            /*poll error, ignore*/
-
-        }else if(ret == 0){
-            /*no return value, ignore*/
-            warnx("no sim data");
-
-        }else{
-            sim_data_decode_publish(ret);
+        /* Set baud rate */
+        if (cfsetispeed(&uart_config, speed) < 0 || cfsetospeed(&uart_config, speed) < 0) {
+            warnx("ERR SET BAUD %s: %d\n", uart_name, termios_state);
+            close(_serial_fd);
+            return -1;
         }
 
-		/*This runs at the rate of the sensors */
-		struct pollfd fds[] = {
-			{ .fd = accel0_sub, .events = POLLIN }
-		};
+    }
 
-		/* wait for a sensor update, check for exit condition every 500 ms */
-		int ret = poll(fds, sizeof(fds) / sizeof(fds[0]), 500);
+    if ((termios_state = tcsetattr(_serial_fd, TCSANOW, &uart_config)) < 0) {
+        warnx("ERR SET CONF %s\n", uart_name);
+        close(_serial_fd);
+        return -1;
+    }
 
-		if (ret < 0) {
-			/* poll error, ignore */
 
-		} else if (ret == 0) {
-			/* no return value, ignore */
-			warnx("no sensor data");
 
-		} else {
+    while(!_task_should_exit)
+    {
+        receive(1);
 
-			/* accel0 update available? */
-			if (fds[0].revents & POLLIN) {
-				orb_copy(ORB_ID(sensor_accel), accel0_sub, &accel0);
-				orb_copy(ORB_ID(sensor_accel), accel1_sub, &accel1);
-				orb_copy(ORB_ID(sensor_gyro), gyro0_sub, &gyro0);
-				orb_copy(ORB_ID(sensor_gyro), gyro1_sub, &gyro1);
 
-				// write out on accel 0, but collect for all other sensors as they have updates
-                //dprintf(serial_fd, "%llu,%d,%d,%d,%d,%d,%d\n", accel0.timestamp, (int)accel0.x_raw, (int)accel0.y_raw,
-                    //(int)accel0.z_raw,
-                    //(int)accel1.x_raw, (int)accel1.y_raw, (int)accel1.z_raw);
 
-                write(serial_fd,buffer,24);
-			}
-                read(serial_fd,buffer,24);
-		}
-	}
 
-	warnx("exiting");
-	thread_running = false;
 
-	fflush(stdout);
-	return 0;
-}
+        /* --- ACTUATOR OUTPUTS --- */
+        if (copy_if_updated_multi(ORB_ID(actuator_outputs), 0, &act_outputs_sub, &_actuator_outputs)) {
+            _buf.payload_tx_raw_pwm_m.pwm1 = _actuator_outputs.output[0];
+            _buf.payload_tx_raw_pwm_m.pwm2 = _actuator_outputs.output[1];
+            _buf.payload_tx_raw_pwm_m.pwm3 = _actuator_outputs.output[2];
+            _buf.payload_tx_raw_pwm_m.pwm4 = _actuator_outputs.output[3];
+            _buf.payload_tx_raw_pwm_m.pwm5 = _actuator_outputs.output[4];
 
-int receive_sim_data(uint8_t *buf, size_t buf_length, int timeout)
-{
-        const int max_timeout = 50;
+            sendMessage(SIM_MSG_RAW_PWM_M,(uint8_t *)&_buf, sizeof(_buf.payload_tx_raw_pwm_m));
 
-        pollfd fds[1];
-        fds[0].fd = _serial_fd;
-        fds[0].events = POLLIN;
-
-        int ret = poll(fds, sizeof(fds) / sizeof(fds[0]), math::min(max_timeout, timeout));
-
-        if (ret > 0) {
-            /* if we have new data from GPS, go handle it */
-            if (fds[0].revents & POLLIN) {
-                /*
-                 * We are here because poll says there is some data, so this
-                 * won't block even on a blocking device. But don't read immediately
-                 * by 1-2 bytes, wait for some more data to save expensive read() calls.
-                 * If more bytes are available, we'll go back to poll() again.
-                 */
-                usleep(SIM_WAIT_BEFORE_READ * 1000);
-                ret = ::read(_serial_fd, buf, buf_length);
-
-            } else {
-                ret = -1;
-            }
+            //warnx("pwm1 = %f",(double)_buf.payload_tx_raw_pwm_m.pwm1);
         }
 
-        return ret;
+        if (copy_if_updated_multi(ORB_ID(actuator_outputs), 1, &act_outputs_1_sub, &_actuator_outputs_1)) {
+            _buf.payload_tx_raw_pwm_a.pwm1 = _actuator_outputs_1.output[0];
+            _buf.payload_tx_raw_pwm_a.pwm2 = _actuator_outputs_1.output[1];
+            _buf.payload_tx_raw_pwm_a.pwm3 = _actuator_outputs_1.output[2];
+            _buf.payload_tx_raw_pwm_a.pwm4 = _actuator_outputs_1.output[3];
+
+            sendMessage(SIM_MSG_RAW_PWM_A,(uint8_t *)&_buf, sizeof(_buf.payload_tx_raw_pwm_a));
+
+            //warnx("pwm6 = %f",(double)_buf.payload_tx_raw_pwm_a.pwm1);
+        }
+    }
+
+    return 0;
+
+
 }
 
-void sim_data_decode_publish(int num)
+int
+MatlabSim::start(int argc, char *argv[])
 {
-    for(int i = 0; i < num; i++)
-    {
-        parseChar(buffer[i]);
-    }
+        ASSERT(_sim_task == -1);
+
+        /* start the task */
+        _sim_task = px4_task_spawn_cmd("matlab_sim",
+                           SCHED_DEFAULT,
+                           SCHED_PRIORITY_MAX - 10,
+                           1100,
+                           (px4_main_t)&MatlabSim::task_main_trampoline,
+                           (argv) ? (char * const *)&argv[2] : (char * const *)NULL);
+
+        if (_sim_task < 0) {
+            PX4_WARN("task start failed");
+            return -errno;
+        }
+
+        return OK;
 }
 
-void parseChar(uint8_t byte)
+int
+MatlabSim::stop()
 {
-    switch(decodeState)
-    {
-        case SYNC:
 
+
+        return OK;
+}
+
+void
+MatlabSim::task_main_trampoline(int argc, char *argv[])
+{
+    Matlab_Sim::sim_control->task_main(argc,argv);
+}
+
+
+static void usage(const char *reason)
+{
+    if (reason) {
+        fprintf(stderr, "%s\n", reason);
     }
+
+    fprintf(stderr, "usage: daemon {start|stop|status} [-p <additional params>]\n\n");
+    exit(1);
+}
+
+
+/**
+ * The daemon app only briefly exists to start
+ * the background job. The stack size assigned in the
+ * Makefile does only apply to this management task.
+ *
+ * The actual stack size should be set in the call
+ * to px4_task_spawn_cmd().
+ */
+int matlab_sim_main(int argc, char *argv[])
+{
+    if (argc < 2) {
+        usage("missing command");
+    }
+
+    if (!strcmp(argv[1], "start")) {
+
+        if(Matlab_Sim::sim_control != nullptr)
+        {
+            warnx("already running\n");
+            /* this is not an error */
+            return 0;
+        }
+
+        Matlab_Sim::sim_control = new MatlabSim;
+
+        if(Matlab_Sim::sim_control == nullptr)
+        {
+            warnx("alloc failed");
+            return 1;
+        }
+
+        if(OK != Matlab_Sim::sim_control->start(argc,argv))
+        {
+            delete Matlab_Sim::sim_control;
+            Matlab_Sim::sim_control = nullptr;
+            warnx("start failed");
+            return 1;
+        }
+
+        return 0;
+    }
+
+    if (!strcmp(argv[1], "stop")) {
+        if(Matlab_Sim::sim_control == nullptr){
+            warnx("not running");
+            return 0;
+        }
+
+        Matlab_Sim::sim_control->stop();
+        delete Matlab_Sim::sim_control;
+        return 0;
+    }
+
+    if (!strcmp(argv[1], "status")) {
+        if (Matlab_Sim::sim_control) {
+            warnx("running");
+
+        } else {
+            warnx("stopped");
+        }
+
+        exit(0);
+    }
+
+    usage("unrecognized command");
+    exit(1);
 }
 
