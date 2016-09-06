@@ -189,7 +189,7 @@ MatlabSim::parseChar(const uint8_t b)
 {
     int ret = 0;
 
-    warnx("parseChar %x",b);
+    //warnx("parseChar %x",b);
 
     switch (_decode_state) {
 
@@ -218,6 +218,7 @@ MatlabSim::parseChar(const uint8_t b)
         addByteToChecksum(b);  // checksum is calculated for everything except Sync and Checksum bytes
         _rx_msg = b;
         _decode_state = SIM_DECODE_ID;
+        warnx("class = %x",b);
         break;
 
     /* Expecting ID */
@@ -225,6 +226,7 @@ MatlabSim::parseChar(const uint8_t b)
         addByteToChecksum(b);
         _rx_msg |= b << 8;
         _decode_state = SIM_DECODE_LENGTH1;
+        warnx("id = %x",b);
         break;
 
     /* Expecting first length byte */
@@ -232,12 +234,14 @@ MatlabSim::parseChar(const uint8_t b)
         addByteToChecksum(b);
         _rx_payload_length = b;
         _decode_state = SIM_DECODE_LENGTH2;
+        warnx("length1 = %x",b);
         break;
 
     /* Expecting second length byte */
     case SIM_DECODE_LENGTH2:
         addByteToChecksum(b);
         _rx_payload_length |= b << 8;	// calculate payload size
+        warnx("length2 = %x",b);
 
         if (payloadRxInit() != 0) {	// start payload reception
             // payload will not be handled, discard message
@@ -253,39 +257,13 @@ MatlabSim::parseChar(const uint8_t b)
     case SIM_DECODE_PAYLOAD:
         addByteToChecksum(b);
 
-        switch (_rx_msg) {
-        case SIM_MSG_RAW_ACCEL:
-            ret = payloadRxAddRawAccel(b);	// add a RAW-ACCEL payload byte
-            break;
-
-        case SIM_MSG_RAW_MAG:
-            ret = payloadRxAddRawMag(b);	// add a RAW-MAG payload byte
-            break;
-
-        case SIM_MSG_RAW_GYRO:
-            ret = payloadRxAddRawGyro(b); // add a RAW-GYRO payload byte
-            break;
-
-        case SIM_MSG_RAW_BARO:
-            ret = payloadRxAddRawBaro(b); // add a RAW-BARO payload byte
-            break;
-
-        case SIM_MSG_RAW_AIRSPEED:
-            ret = payloadRxAddRawAirspeed(b); // add a RAW-AIRSPEED payload byte
-            break;
-
-        case SIM_MSG_RAW_GPS:
-            ret = payloadRxAddRawGps(b); // add a RAW-GPS payload byte
-            break;
-
-        default:
-            ret = payloadRxAdd(b);		// add a payload byte
-            break;
-        }
+        ret = payloadRxAdd(b);		// add a payload byte
+        warnx("payload");
 
         if (ret < 0) {
             // payload not handled, discard message
             decodeInit();
+            warnx("payload rx add error");
 
         } else if (ret > 0) {
             // payload complete, expecting checksum
@@ -305,6 +283,7 @@ MatlabSim::parseChar(const uint8_t b)
 
         } else {
             _decode_state = SIM_DECODE_CHKSUM2;
+            warnx("checksum1 ok");
         }
 
         break;
@@ -315,6 +294,7 @@ MatlabSim::parseChar(const uint8_t b)
 
         } else {
             ret = payloadRxDone();	// finish payload processing
+            warnx("checksum2 ok");
         }
 
         decodeInit();
@@ -341,6 +321,7 @@ MatlabSim::payloadRxInit()
     case SIM_MSG_RAW_ACCEL:
         if (_rx_payload_length != sizeof(sim_payload_rx_raw_accel_t)) {
             _rx_state = SIM_RXMSG_ERROR_LENGTH;
+            warnx("accel length error");
 
         }
         break;
@@ -348,6 +329,7 @@ MatlabSim::payloadRxInit()
     case SIM_MSG_RAW_MAG:
         if (_rx_payload_length != sizeof(sim_payload_rx_raw_mag_t)) {
             _rx_state = SIM_RXMSG_ERROR_LENGTH;
+            warnx("mag length error");
 
         }
         break;
@@ -355,6 +337,7 @@ MatlabSim::payloadRxInit()
     case SIM_MSG_RAW_GYRO:
         if (_rx_payload_length != sizeof(sim_payload_rx_raw_gyro_t)) {
             _rx_state = SIM_RXMSG_ERROR_LENGTH;
+            warnx("gyro length error");
 
         }
         break;
@@ -362,6 +345,7 @@ MatlabSim::payloadRxInit()
     case SIM_MSG_RAW_BARO:
         if (_rx_payload_length != sizeof(sim_payload_rx_raw_baro_t)) {
             _rx_state = SIM_RXMSG_ERROR_LENGTH;
+            warnx("baro length error");
 
         }
         break;
@@ -369,6 +353,7 @@ MatlabSim::payloadRxInit()
     case SIM_MSG_RAW_AIRSPEED:
         if (_rx_payload_length != sizeof(sim_payload_rx_raw_airspeed_t)) {
             _rx_state = SIM_RXMSG_ERROR_LENGTH;
+            warnx("airspeed length error");
 
         }
         break;
@@ -376,6 +361,7 @@ MatlabSim::payloadRxInit()
     case SIM_MSG_RAW_GPS:
         if (_rx_payload_length != sizeof(sim_payload_rx_raw_gps_t)) {
             _rx_state = SIM_RXMSG_ERROR_LENGTH;
+            warnx("gps length error");
 
         }
         break;
@@ -640,37 +626,84 @@ MatlabSim::payloadRxDone(void)
 
     case SIM_MSG_RAW_ACCEL:
         int accel_multi;
+         _sensor_accel.timestamp = hrt_absolute_time();
+        _sensor_accel.x_raw = _buf.payload_rx_raw_accel.x / mg2ms2;
+        _sensor_accel.y_raw = _buf.payload_rx_raw_accel.y / mg2ms2;
+        _sensor_accel.z_raw = _buf.payload_rx_raw_accel.z / mg2ms2;
+        _sensor_accel.x = _buf.payload_rx_raw_accel.x;
+        _sensor_accel.y = _buf.payload_rx_raw_accel.y;
+        _sensor_accel.z = _buf.payload_rx_raw_accel.z;
         orb_publish_auto(ORB_ID(sensor_accel), &_accel_pub, &_sensor_accel, &accel_multi, ORB_PRIO_HIGH);
+        warnx("publish accel");
         ret = 1;
         break;
 
     case SIM_MSG_RAW_MAG:
         int mag_multi;
+        _sensor_mag.timestamp = hrt_absolute_time();
+        _sensor_mag.x_raw = _buf.payload_rx_raw_mag.x * 1000.0f;
+        _sensor_mag.y_raw = _buf.payload_rx_raw_mag.y * 1000.0f;
+        _sensor_mag.z_raw = _buf.payload_rx_raw_mag.z * 1000.0f;
+        _sensor_mag.x = _buf.payload_rx_raw_mag.x;
+        _sensor_mag.y = _buf.payload_rx_raw_mag.y;
+        _sensor_mag.z = _buf.payload_rx_raw_mag.z;
         orb_publish_auto(ORB_ID(sensor_mag), &_mag_pub, &_sensor_mag, &mag_multi, ORB_PRIO_HIGH);
+        warnx("publish mag");
         ret = 1;
         break;
 
     case SIM_MSG_RAW_GYRO:
         int gyro_multi;
+        _sensor_gyro.timestamp = hrt_absolute_time();
+        _sensor_gyro.x_raw = _buf.payload_rx_raw_gyro.x * 1000.0f;
+        _sensor_gyro.y_raw = _buf.payload_rx_raw_gyro.y * 1000.0f;
+        _sensor_gyro.z_raw = _buf.payload_rx_raw_gyro.z * 1000.0f;
+        _sensor_gyro.x = _buf.payload_rx_raw_gyro.x;
+        _sensor_gyro.y = _buf.payload_rx_raw_gyro.y;
+        _sensor_gyro.z = _buf.payload_rx_raw_gyro.z;
         orb_publish_auto(ORB_ID(sensor_gyro), &_gyro_pub, &_sensor_gyro, &gyro_multi, ORB_PRIO_HIGH);
+        warnx("publish gyro");
         ret = 1;
         break;
 
     case SIM_MSG_RAW_BARO:
         int baro_multi;
+        _sensor_baro.timestamp = hrt_absolute_time();
+        _sensor_baro.pressure = _buf.payload_rx_raw_baro.pressure;
+        _sensor_baro.altitude = _buf.payload_rx_raw_baro.altitude;
         orb_publish_auto(ORB_ID(sensor_baro), &_baro_pub, &_sensor_baro, &baro_multi, ORB_PRIO_HIGH);
+        warnx("publish baro");
         ret = 1;
         break;
 
     case SIM_MSG_RAW_AIRSPEED:
         int airspeed_multi;
+        _airspeed.timestamp = hrt_absolute_time();
+        _airspeed.indicated_airspeed_m_s = _buf.payload_rx_raw_airspeed.indicated_airspeed_m_s;
+        _airspeed.true_airspeed_m_s = _buf.payload_rx_raw_airspeed.true_airspeed_m_s;
+        _airspeed.true_airspeed_unfiltered_m_s = _buf.payload_rx_raw_airspeed.true_airspeed_m_s;
         orb_publish_auto(ORB_ID(airspeed), &_airspeed_pub, &_airspeed, &airspeed_multi, ORB_PRIO_HIGH);
+        warnx("publish airspeed");
         ret = 1;
         break;
 
     case SIM_MSG_RAW_GPS:
         int gps_multi;
+        _vehicle_gps_position.timestamp = hrt_absolute_time();
+        _vehicle_gps_position.lat = _buf.payload_rx_raw_gps.lat;
+        _vehicle_gps_position.lon = _buf.payload_rx_raw_gps.lon;
+        _vehicle_gps_position.alt = _buf.payload_rx_raw_gps.alt;
+        _vehicle_gps_position.eph = _buf.payload_rx_raw_gps.eph;
+        _vehicle_gps_position.epv = _buf.payload_rx_raw_gps.epv;
+        _vehicle_gps_position.vel_n_m_s = _buf.payload_rx_raw_gps.vn;
+        _vehicle_gps_position.vel_e_m_s = _buf.payload_rx_raw_gps.ve;
+        _vehicle_gps_position.vel_d_m_s = _buf.payload_rx_raw_gps.vd;
+        _vehicle_gps_position.vel_m_s = _buf.payload_rx_raw_gps.vel;
+        _vehicle_gps_position.fix_type = _buf.payload_rx_raw_gps.fix_type;
+        _vehicle_gps_position.satellites_used = _buf.payload_rx_raw_gps.satellites_visible;
+
         orb_publish_auto(ORB_ID(vehicle_gps_position), &_gps_pub, &_airspeed, &gps_multi, ORB_PRIO_HIGH);
+        warnx("publish gps");
         ret = 1;
         break;
 
@@ -691,14 +724,14 @@ MatlabSim::sendMessage(const uint16_t msg, const uint8_t *payload, const uint16_
     header.msg	= msg;
     header.length	= length;
 
-    warnx("length %d",length);
+    //warnx("length %d",length);
 
     // Calculate checksum
     calcChecksum(((uint8_t *)&header) + 2, sizeof(header) - 2, &checksum); // skip 2 sync bytes
 
     if (payload != nullptr) {
         calcChecksum(payload, length, &checksum);
-        warnx("checksum");
+        //warnx("checksum");
     }
 
     // Send message
