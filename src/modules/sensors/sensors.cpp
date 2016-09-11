@@ -1082,6 +1082,11 @@ Sensors::accel_poll(struct sensor_combined_s &raw)
 		bool accel_updated;
 		orb_check(_accel.subscription[i], &accel_updated);
 
+        if(!accel_updated)
+        {
+        warnx("accel_updated is false");
+        }
+
 		if (accel_updated) {
 			struct accel_report accel_report;
 
@@ -2355,6 +2360,8 @@ Sensors::task_main()
 		 * if a gyro fails) */
 		int pret = px4_poll(&poll_fds, 1, 50);
 
+        //warnx("pret = %d",pret);
+
 		/* if pret == 0 it timed out - periodic check for _task_should_exit, etc. */
 
 		/* this is undesirable but not much we can do - might want to flag unhappy status */
@@ -2367,6 +2374,8 @@ Sensors::task_main()
 			}
 
 			usleep(1000);
+
+            printf("poll sensors error");
 
 			continue;
 		}
@@ -2403,6 +2412,8 @@ Sensors::task_main()
 			if (_last_baro_timestamp[_baro.last_best_vote]) {
 				raw.baro_timestamp_relative = (int32_t)(_last_baro_timestamp[_baro.last_best_vote] - raw.timestamp);
 			}
+
+            //warnx("accel_x = %f",(double)raw.accelerometer_m_s2[0]);
 
 			orb_publish(ORB_ID(sensor_combined), _sensor_pub, &raw);
 

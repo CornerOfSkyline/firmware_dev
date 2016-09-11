@@ -225,15 +225,6 @@ private:
 
     void calcChecksum(const uint8_t *buffer, const uint16_t length, sim_checksum_t *checksum);
 
-    int payloadRxAddRawAccel(const uint8_t b);
-    int payloadRxAddRawMag(const uint8_t b);
-    int payloadRxAddRawGyro(const uint8_t b);
-    int payloadRxAddRawBaro(const uint8_t b);
-    int payloadRxAddRawAirspeed(const uint8_t b);
-    int payloadRxAddRawGps(const uint8_t b);
-
-
-
     bool _task_should_exit;
     int             _serial_fd;
     uint16_t		_rx_payload_length;
@@ -256,6 +247,13 @@ private:
     orb_advert_t _pwm_pub;  
     int act_outputs_sub;
     int act_outputs_1_sub;
+
+    int accel_multi;
+    int mag_multi;
+    int gyro_multi;
+    int baro_multi;
+    int airspeed_multi;
+    int gps_multi;
 
 
     struct sensor_accel_s _sensor_accel;

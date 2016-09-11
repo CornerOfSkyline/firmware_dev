@@ -14,7 +14,7 @@ set(config_module_list
 	drivers/stm32/tone_alarm
 	drivers/led
 	drivers/px4fmu
-	drivers/px4io
+        drivers/px4io
 	drivers/boards/px4fmu-v2
 	drivers/rgbled
 	drivers/mpu6000
@@ -184,6 +184,7 @@ set(config_module_list
 
 	# Hardware test
 	#examples/hwtest
+
 )
 
 set(config_extra_builtin_cmds
