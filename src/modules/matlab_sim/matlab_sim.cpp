@@ -66,7 +66,7 @@
 #define SWAP16(X)	((((X) >>  8) & 0x00ff) | (((X) << 8) & 0xff00))
 
 #define SIM_WAIT_BEFORE_READ	20		// ms, wait before reading to save read() calls
-#define SIM_READ_BUFFER_SIZE 128
+#define SIM_READ_buf_receiveFER_SIZE 128
 #define SIM_PACKET_TIMEOUT	2		// ms, if now data during this delay assume that full update received
 
 uint8_t buffert[24];
@@ -119,7 +119,7 @@ MatlabSim::calcChecksum(const uint8_t *buffer, const uint16_t length, sim_checks
 int	// -1 = error, 0 = no message handled, 1 = message handled, 2 = sat info message handled
 MatlabSim::receive(unsigned timeout)
 {
-    uint8_t buf[SIM_READ_BUFFER_SIZE];
+    uint8_t buf[SIM_READ_buf_receiveFER_SIZE];
 
     /* timeout additional to poll */
     hrt_abstime time_started = hrt_absolute_time();
@@ -411,9 +411,9 @@ int	// -1 = error, 0 = ok, 1 = payload completed
 MatlabSim::payloadRxAdd(const uint8_t b)
 {
     int ret = 0;
-    uint8_t *p_buf = (uint8_t *)&_buf;
+    uint8_t *p_buf_receive = (uint8_t *)&_buf_receive;
 
-    p_buf[_rx_payload_index] = b;
+    p_buf_receive[_rx_payload_index] = b;
 
     if (++_rx_payload_index >= _rx_payload_length) {
         ret = 1;	// payload received completely
@@ -442,12 +442,12 @@ MatlabSim::payloadRxDone(void)
         //int accel_multi;
         memset(&_sensor_accel, 0, sizeof(_sensor_accel));
         _sensor_accel.timestamp = hrt_absolute_time();
-        _sensor_accel.x_raw = _buf.payload_rx_raw_accel.x / mg2ms2;
-        _sensor_accel.y_raw = _buf.payload_rx_raw_accel.y / mg2ms2;
-        _sensor_accel.z_raw = _buf.payload_rx_raw_accel.z / mg2ms2;
-        _sensor_accel.x = _buf.payload_rx_raw_accel.x;
-        _sensor_accel.y = _buf.payload_rx_raw_accel.y;
-        _sensor_accel.z = _buf.payload_rx_raw_accel.z;
+        _sensor_accel.x_raw = _buf_receive.payload_rx_raw_accel.x / mg2ms2;
+        _sensor_accel.y_raw = _buf_receive.payload_rx_raw_accel.y / mg2ms2;
+        _sensor_accel.z_raw = _buf_receive.payload_rx_raw_accel.z / mg2ms2;
+        _sensor_accel.x = _buf_receive.payload_rx_raw_accel.x;
+        _sensor_accel.y = _buf_receive.payload_rx_raw_accel.y;
+        _sensor_accel.z = _buf_receive.payload_rx_raw_accel.z;
         _sensor_accel.integral_dt = 0;
         if(_sensor_accel.x > 10)
         {
@@ -463,12 +463,12 @@ MatlabSim::payloadRxDone(void)
         //int mag_multi;
         memset(&_sensor_mag, 0, sizeof(_sensor_mag));
         _sensor_mag.timestamp = hrt_absolute_time();
-        _sensor_mag.x_raw = _buf.payload_rx_raw_mag.x * 1000.0f;
-        _sensor_mag.y_raw = _buf.payload_rx_raw_mag.y * 1000.0f;
-        _sensor_mag.z_raw = _buf.payload_rx_raw_mag.z * 1000.0f;
-        _sensor_mag.x = _buf.payload_rx_raw_mag.x;
-        _sensor_mag.y = _buf.payload_rx_raw_mag.y;
-        _sensor_mag.z = _buf.payload_rx_raw_mag.z;
+        _sensor_mag.x_raw = _buf_receive.payload_rx_raw_mag.x * 1000.0f;
+        _sensor_mag.y_raw = _buf_receive.payload_rx_raw_mag.y * 1000.0f;
+        _sensor_mag.z_raw = _buf_receive.payload_rx_raw_mag.z * 1000.0f;
+        _sensor_mag.x = _buf_receive.payload_rx_raw_mag.x;
+        _sensor_mag.y = _buf_receive.payload_rx_raw_mag.y;
+        _sensor_mag.z = _buf_receive.payload_rx_raw_mag.z;
         //orb_publish_auto(ORB_ID(sensor_mag), &_mag_pub, &_sensor_mag, &mag_multi, ORB_PRIO_HIGH);
         ret = orb_publish(ORB_ID(sensor_mag),_mag_pub,&_sensor_mag);
         //warnx("publish mag");
@@ -479,12 +479,12 @@ MatlabSim::payloadRxDone(void)
         //int gyro_multi;
         memset(&_sensor_gyro, 0, sizeof(_sensor_gyro));
         _sensor_gyro.timestamp = hrt_absolute_time();
-        _sensor_gyro.x_raw = _buf.payload_rx_raw_gyro.x * 1000.0f;
-        _sensor_gyro.y_raw = _buf.payload_rx_raw_gyro.y * 1000.0f;
-        _sensor_gyro.z_raw = _buf.payload_rx_raw_gyro.z * 1000.0f;
-        _sensor_gyro.x = _buf.payload_rx_raw_gyro.x;
-        _sensor_gyro.y = _buf.payload_rx_raw_gyro.y;
-        _sensor_gyro.z = _buf.payload_rx_raw_gyro.z;
+        _sensor_gyro.x_raw = _buf_receive.payload_rx_raw_gyro.x * 1000.0f;
+        _sensor_gyro.y_raw = _buf_receive.payload_rx_raw_gyro.y * 1000.0f;
+        _sensor_gyro.z_raw = _buf_receive.payload_rx_raw_gyro.z * 1000.0f;
+        _sensor_gyro.x = _buf_receive.payload_rx_raw_gyro.x;
+        _sensor_gyro.y = _buf_receive.payload_rx_raw_gyro.y;
+        _sensor_gyro.z = _buf_receive.payload_rx_raw_gyro.z;
         _sensor_gyro.integral_dt = 0;
         //orb_publish_auto(ORB_ID(sensor_gyro), &_gyro_pub, &_sensor_gyro, &gyro_multi, ORB_PRIO_HIGH);
         ret = orb_publish(ORB_ID(sensor_gyro),_gyro_pub,&_sensor_gyro);
@@ -496,8 +496,8 @@ MatlabSim::payloadRxDone(void)
         //int baro_multi;
         memset(&_sensor_baro, 0, sizeof(_sensor_baro));
         _sensor_baro.timestamp = hrt_absolute_time();
-        _sensor_baro.pressure = _buf.payload_rx_raw_baro.pressure;
-        _sensor_baro.altitude = _buf.payload_rx_raw_baro.altitude;
+        _sensor_baro.pressure = _buf_receive.payload_rx_raw_baro.pressure;
+        _sensor_baro.altitude = _buf_receive.payload_rx_raw_baro.altitude;
         //orb_publish_auto(ORB_ID(sensor_baro), &_baro_pub, &_sensor_baro, &baro_multi, ORB_PRIO_HIGH);
         ret = orb_publish(ORB_ID(sensor_baro),_baro_pub,&_sensor_baro);
         //warnx("publish baro");
@@ -508,9 +508,9 @@ MatlabSim::payloadRxDone(void)
         //int airspeed_multi;
         memset(&_airspeed, 0, sizeof(_airspeed));
         _airspeed.timestamp = hrt_absolute_time();
-        _airspeed.indicated_airspeed_m_s = _buf.payload_rx_raw_airspeed.indicated_airspeed_m_s;
-        _airspeed.true_airspeed_m_s = _buf.payload_rx_raw_airspeed.true_airspeed_m_s;
-        _airspeed.true_airspeed_unfiltered_m_s = _buf.payload_rx_raw_airspeed.true_airspeed_m_s;
+        _airspeed.indicated_airspeed_m_s = _buf_receive.payload_rx_raw_airspeed.indicated_airspeed_m_s;
+        _airspeed.true_airspeed_m_s = _buf_receive.payload_rx_raw_airspeed.true_airspeed_m_s;
+        _airspeed.true_airspeed_unfiltered_m_s = _buf_receive.payload_rx_raw_airspeed.true_airspeed_m_s;
         //orb_publish_auto(ORB_ID(airspeed), &_airspeed_pub, &_airspeed, &airspeed_multi, ORB_PRIO_HIGH);
         ret = orb_publish(ORB_ID(airspeed),_airspeed_pub,&_airspeed);
         //warnx("publish airspeed");
@@ -521,17 +521,19 @@ MatlabSim::payloadRxDone(void)
         //int gps_multi;
         memset(&_vehicle_gps_position, 0, sizeof(_vehicle_gps_position));
         _vehicle_gps_position.timestamp = hrt_absolute_time();
-        _vehicle_gps_position.lat = _buf.payload_rx_raw_gps.lat;
-        _vehicle_gps_position.lon = _buf.payload_rx_raw_gps.lon;
-        _vehicle_gps_position.alt = _buf.payload_rx_raw_gps.alt;
-        _vehicle_gps_position.eph = _buf.payload_rx_raw_gps.eph;
-        _vehicle_gps_position.epv = _buf.payload_rx_raw_gps.epv;
-        _vehicle_gps_position.vel_n_m_s = _buf.payload_rx_raw_gps.vn;
-        _vehicle_gps_position.vel_e_m_s = _buf.payload_rx_raw_gps.ve;
-        _vehicle_gps_position.vel_d_m_s = _buf.payload_rx_raw_gps.vd;
-        _vehicle_gps_position.vel_m_s = _buf.payload_rx_raw_gps.vel;
-        _vehicle_gps_position.fix_type = _buf.payload_rx_raw_gps.fix_type;
-        _vehicle_gps_position.satellites_used = _buf.payload_rx_raw_gps.satellites_visible;
+        _vehicle_gps_position.lat = _buf_receive.payload_rx_raw_gps.lat;
+        _vehicle_gps_position.lon = _buf_receive.payload_rx_raw_gps.lon;
+        _vehicle_gps_position.alt = _buf_receive.payload_rx_raw_gps.alt;
+        _vehicle_gps_position.eph = _buf_receive.payload_rx_raw_gps.eph;
+        _vehicle_gps_position.epv = _buf_receive.payload_rx_raw_gps.epv;
+        _vehicle_gps_position.vel_n_m_s = _buf_receive.payload_rx_raw_gps.vn;
+        _vehicle_gps_position.vel_e_m_s = _buf_receive.payload_rx_raw_gps.ve;
+        _vehicle_gps_position.vel_d_m_s = _buf_receive.payload_rx_raw_gps.vd;
+        _vehicle_gps_position.vel_m_s = _buf_receive.payload_rx_raw_gps.vel;
+        _vehicle_gps_position.fix_type = _buf_receive.payload_rx_raw_gps.fix_type;
+        _vehicle_gps_position.satellites_used = _buf_receive.payload_rx_raw_gps.satellites_visible;
+
+        //warnx("lat = %f,lon = %f",(double)_vehicle_gps_position.lat,(double)_vehicle_gps_position.lon);
 
         //orb_publish_auto(ORB_ID(vehicle_gps_position), &_gps_pub, &_airspeed, &gps_multi, ORB_PRIO_HIGH);
         ret = orb_publish(ORB_ID(vehicle_gps_position),_gps_pub,&_vehicle_gps_position);
@@ -689,31 +691,31 @@ MatlabSim::task_main(int argc, char *argv[])
         /* --- ACTUATOR OUTPUTS --- */
         if (copy_if_updated_multi(ORB_ID(actuator_outputs), 0, &act_outputs_sub, &_actuator_outputs)) {
 
-            memset(&_buf.payload_tx_raw_pwm_m, 0, sizeof(_buf.payload_tx_raw_pwm_m));
+            memset(&_buf_send.payload_tx_raw_pwm_m, 0, sizeof(_buf_send.payload_tx_raw_pwm_m));
 
-            _buf.payload_tx_raw_pwm_m.pwm1 = _actuator_outputs.output[0];
-            _buf.payload_tx_raw_pwm_m.pwm2 = _actuator_outputs.output[1];
-            _buf.payload_tx_raw_pwm_m.pwm3 = _actuator_outputs.output[2];
-            _buf.payload_tx_raw_pwm_m.pwm4 = _actuator_outputs.output[3];
-            _buf.payload_tx_raw_pwm_m.pwm5 = _actuator_outputs.output[4];
+            _buf_send.payload_tx_raw_pwm_m.pwm1 = _actuator_outputs.output[0];
+            _buf_send.payload_tx_raw_pwm_m.pwm2 = _actuator_outputs.output[1];
+            _buf_send.payload_tx_raw_pwm_m.pwm3 = _actuator_outputs.output[2];
+            _buf_send.payload_tx_raw_pwm_m.pwm4 = _actuator_outputs.output[3];
+            _buf_send.payload_tx_raw_pwm_m.pwm5 = _actuator_outputs.output[4];
 
-            sendMessage(SIM_MSG_RAW_PWM_M,(uint8_t *)&_buf, sizeof(_buf.payload_tx_raw_pwm_m));
+            sendMessage(SIM_MSG_RAW_PWM_M,(uint8_t *)&_buf_send, sizeof(_buf_send.payload_tx_raw_pwm_m));
 
-            //warnx("pwm1 = %f",(double)_buf.payload_tx_raw_pwm_m.pwm1);
+            //warnx("pwm1 = %f",(double)_buf_receive.payload_tx_raw_pwm_m.pwm1);
         }
 
         if (copy_if_updated_multi(ORB_ID(actuator_outputs), 1, &act_outputs_1_sub, &_actuator_outputs_1)) {
 
-            memset(&_buf.payload_tx_raw_pwm_a, 0, sizeof(_buf.payload_tx_raw_pwm_a));
+            memset(&_buf_send.payload_tx_raw_pwm_a, 0, sizeof(_buf_send.payload_tx_raw_pwm_a));
 
-            _buf.payload_tx_raw_pwm_a.pwm1 = _actuator_outputs_1.output[0];
-            _buf.payload_tx_raw_pwm_a.pwm2 = _actuator_outputs_1.output[1];
-            _buf.payload_tx_raw_pwm_a.pwm3 = _actuator_outputs_1.output[2];
-            _buf.payload_tx_raw_pwm_a.pwm4 = _actuator_outputs_1.output[3];
+            _buf_send.payload_tx_raw_pwm_a.pwm1 = _actuator_outputs_1.output[0];
+            _buf_send.payload_tx_raw_pwm_a.pwm2 = _actuator_outputs_1.output[1];
+            _buf_send.payload_tx_raw_pwm_a.pwm3 = _actuator_outputs_1.output[2];
+            _buf_send.payload_tx_raw_pwm_a.pwm4 = _actuator_outputs_1.output[3];
 
-            sendMessage(SIM_MSG_RAW_PWM_A,(uint8_t *)&_buf, sizeof(_buf.payload_tx_raw_pwm_a));
+            sendMessage(SIM_MSG_RAW_PWM_A,(uint8_t *)&_buf_send, sizeof(_buf_send.payload_tx_raw_pwm_a));
 
-            //warnx("pwm6 = %f",(double)_buf.payload_tx_raw_pwm_a.pwm1);
+            //warnx("pwm6 = %f",(double)_buf_receive.payload_tx_raw_pwm_a.pwm1);
         }
     }
 

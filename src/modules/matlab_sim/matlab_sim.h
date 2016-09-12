@@ -231,7 +231,8 @@ private:
     uint16_t		_rx_payload_index;
     uint8_t			_rx_ck_a;
     uint8_t			_rx_ck_b;
-    sim_buf_t		_buf;
+    sim_buf_t		_buf_send;
+    sim_buf_t		_buf_receive;
     sim_decode_state_t _decode_state;
     int             _sim_task;
     uint16_t		_rx_msg;

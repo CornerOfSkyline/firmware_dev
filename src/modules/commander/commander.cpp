@@ -636,7 +636,7 @@ transition_result_t arm_disarm(bool arm, orb_advert_t *mavlink_log_pub_local, co
 					     &safety,
 					     arm ? vehicle_status_s::ARMING_STATE_ARMED : vehicle_status_s::ARMING_STATE_STANDBY,
 					     &armed,
-					     true /* fRunPreArmChecks */,
+                         false /* fRunPreArmChecks */,
 					     mavlink_log_pub_local,
 					     &status_flags,
 					     avionics_power_rail_voltage,
@@ -1511,11 +1511,11 @@ int commander_thread_main(int argc, char *argv[])
 	param_get(_param_sys_type, &(status.system_type)); // get system type
 	status.is_rotary_wing = is_rotary_wing(&status) || is_vtol(&status);
 
-	bool checkAirspeed = false;
+    //bool checkAirspeed = false;
 	/* Perform airspeed check only if circuit breaker is not
 	 * engaged and it's not a rotary wing */
 	if (!status_flags.circuit_breaker_engaged_airspd_check && !status.is_rotary_wing) {
-		checkAirspeed = true;
+        //checkAirspeed = true;
 	}
 
 	// Run preflight check
@@ -1531,12 +1531,12 @@ int commander_thread_main(int argc, char *argv[])
 		// HIL configuration selected: real sensors will be disabled
 		status_flags.condition_system_sensors_initialized = false;
 		set_tune_override(TONE_STARTUP_TUNE); //normal boot tune
-	} else {
-			// sensor diagnostics done continuously, not just at boot so don't warn about any issues just yet
-			status_flags.condition_system_sensors_initialized = Commander::preflightCheck(&mavlink_log_pub, true, true, true, true,
-				checkAirspeed, (status.rc_input_mode == vehicle_status_s::RC_IN_MODE_DEFAULT),
-				!can_arm_without_gps, /*checkDynamic */ false, /* reportFailures */ false);
-			set_tune_override(TONE_STARTUP_TUNE); //normal boot tune
+    } else {
+            //sensor diagnostics done continuously, not just at boot so don't warn about any issues just yet
+            status_flags.condition_system_sensors_initialized = true;//Commander::preflightCheck(&mavlink_log_pub, true, true, true, true,
+                //checkAirspeed, (status.rc_input_mode == vehicle_status_s::RC_IN_MODE_DEFAULT),
+                //!can_arm_without_gps, /*checkDynamic */ false, /* reportFailures */ false);
+            set_tune_override(TONE_STARTUP_TUNE); //normal boot tune
 	}
 
 	// user adjustable duration required to assert arm/disarm via throttle/rudder stick
@@ -1752,14 +1752,14 @@ int commander_thread_main(int argc, char *argv[])
 				    /* and the system is not already armed (and potentially flying) */
 				    !armed.armed) {
 
-					bool chAirspeed = false;
+                    //bool chAirspeed = false;
 					hotplug_timeout = hrt_elapsed_time(&commander_boot_timestamp) > HOTPLUG_SENS_TIMEOUT;
 
 					/* Perform airspeed check only if circuit breaker is not
 					 * engaged and it's not a rotary wing
 					 */
 					if (!status_flags.circuit_breaker_engaged_airspd_check && !status.is_rotary_wing) {
-						chAirspeed = true;
+                        //chAirspeed = true;
 					}
 
 					/* provide RC and sensor status feedback to the user */
@@ -1769,7 +1769,7 @@ int commander_thread_main(int argc, char *argv[])
 								(status.rc_input_mode == vehicle_status_s::RC_IN_MODE_DEFAULT), /* checkGNSS */ false, /* checkDynamic */ true, /* reportFailures */ false);
 					} else {
 						/* check sensors also */
-						(void)Commander::preflightCheck(&mavlink_log_pub, true, true, true, true, chAirspeed,
+                        (void)Commander::preflightCheck(&mavlink_log_pub, false, false, false, false, false,
 								(status.rc_input_mode == vehicle_status_s::RC_IN_MODE_DEFAULT), !can_arm_without_gps, /* checkDynamic */ true, hotplug_timeout);
 					}
 				}
@@ -2407,7 +2407,7 @@ int commander_thread_main(int argc, char *argv[])
 									     &safety,
 									     new_arming_state,
 									     &armed,
-									     true /* fRunPreArmChecks */,
+                                         false /* fRunPreArmChecks */,
 									     &mavlink_log_pub,
 									     &status_flags,
 									     avionics_power_rail_voltage,
@@ -2455,7 +2455,7 @@ int commander_thread_main(int argc, char *argv[])
 										     &safety,
 										     vehicle_status_s::ARMING_STATE_ARMED,
 										     &armed,
-										     true /* fRunPreArmChecks */,
+                                             false /* fRunPreArmChecks */,
 										     &mavlink_log_pub,
 										     &status_flags,
 										     avionics_power_rail_voltage,
@@ -3816,15 +3816,15 @@ void *commander_low_prio_loop(void *arg)
 						// might have worked just fine, but the preflight check fails for a different reason,
 						// so this would be prone to false negatives.
 
-						bool checkAirspeed = false;
+                        //bool checkAirspeed = false;
 						bool hotplug_timeout = hrt_elapsed_time(&commander_boot_timestamp) > HOTPLUG_SENS_TIMEOUT;
 						/* Perform airspeed check only if circuit breaker is not
 						 * engaged and it's not a rotary wing */
 						if (!status_flags.circuit_breaker_engaged_airspd_check && !status.is_rotary_wing) {
-							checkAirspeed = true;
+                            //checkAirspeed = true;
 						}
 
-						status_flags.condition_system_sensors_initialized = Commander::preflightCheck(&mavlink_log_pub, true, true, true, true, checkAirspeed,
+                        status_flags.condition_system_sensors_initialized = Commander::preflightCheck(&mavlink_log_pub, false, false, false, false, false,
 							!(status.rc_input_mode >= vehicle_status_s::RC_IN_MODE_OFF), !can_arm_without_gps, /* checkDynamic */ true, hotplug_timeout);
 
 						arming_state_transition(&status,

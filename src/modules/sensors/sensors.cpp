@@ -1082,11 +1082,6 @@ Sensors::accel_poll(struct sensor_combined_s &raw)
 		bool accel_updated;
 		orb_check(_accel.subscription[i], &accel_updated);
 
-        if(!accel_updated)
-        {
-        warnx("accel_updated is false");
-        }
-
 		if (accel_updated) {
 			struct accel_report accel_report;
 
