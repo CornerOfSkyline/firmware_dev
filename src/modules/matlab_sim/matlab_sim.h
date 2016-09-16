@@ -17,6 +17,7 @@
 #include <uORB/topics/vehicle_gps_position.h>
 #include <uORB/topics/airspeed.h>
 #include <uORB/topics/actuator_outputs.h>
+#include <uORB/topics/control_state.h>
 
 extern "C" __EXPORT int matlab_sim_main(int argc, char *argv[]);
 
@@ -245,7 +246,9 @@ private:
     orb_advert_t _mag_pub;
     orb_advert_t _airspeed_pub;
     orb_advert_t _gps_pub;
-    orb_advert_t _pwm_pub;  
+    orb_advert_t _pwm_pub;
+    orb_advert_t _attitude_pub;
+    orb_advert_t _ctrl_state_pub;
     int act_outputs_sub;
     int act_outputs_1_sub;
 
@@ -255,6 +258,8 @@ private:
     int baro_multi;
     int airspeed_multi;
     int gps_multi;
+    int att_inst;
+    int ctrl_inst;
 
 
     struct sensor_accel_s _sensor_accel;
@@ -265,6 +270,11 @@ private:
     struct vehicle_gps_position_s _vehicle_gps_position;
     struct actuator_outputs_s _actuator_outputs;
     struct actuator_outputs_s _actuator_outputs_1;
+    struct vehicle_attitude_s _vehicle_attitude;
+    struct control_state_s _ctrl_state;
+
+    math::Quaternion q;
+    math::Matrix<3,3> R;
 
 	
 };

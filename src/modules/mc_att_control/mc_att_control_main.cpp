@@ -851,6 +851,7 @@ MulticopterAttitudeControl::task_main()
 
 		/* timed out - periodic check for _task_should_exit */
 		if (pret == 0) {
+            //warnx("mc_att_control poll timeout!");
 			continue;
 		}
 
@@ -989,6 +990,8 @@ MulticopterAttitudeControl::task_main()
 
 						orb_publish(_actuators_id, _actuators_0_pub, &_actuators);
 						perf_end(_controller_latency_perf);
+
+                        //warnx("control[0] = %f",(double)_actuators.control[0]);
 
 					} else if (_actuators_id) {
 						_actuators_0_pub = orb_advertise(_actuators_id, &_actuators);

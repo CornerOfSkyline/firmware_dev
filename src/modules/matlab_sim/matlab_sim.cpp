@@ -456,6 +456,9 @@ MatlabSim::payloadRxDone(void)
         //ret = orb_publish_auto(ORB_ID(sensor_accel), &_accel_pub, &_sensor_accel, &accel_multi, ORB_PRIO_HIGH);
         ret = orb_publish(ORB_ID(sensor_accel),_accel_pub,&_sensor_accel);
         //warnx("publish accel ret = %X",ret);
+        _vehicle_attitude.pitchacc = _buf_receive.payload_rx_raw_accel.x;
+        _vehicle_attitude.rollacc = _buf_receive.payload_rx_raw_accel.y;
+        _vehicle_attitude.yawacc = _buf_receive.payload_rx_raw_accel.z;
         ret = 1;
         break;
 
@@ -472,6 +475,9 @@ MatlabSim::payloadRxDone(void)
         //orb_publish_auto(ORB_ID(sensor_mag), &_mag_pub, &_sensor_mag, &mag_multi, ORB_PRIO_HIGH);
         ret = orb_publish(ORB_ID(sensor_mag),_mag_pub,&_sensor_mag);
         //warnx("publish mag");
+        _vehicle_attitude.pitch = _buf_receive.payload_rx_raw_mag.y;
+        _vehicle_attitude.roll = _buf_receive.payload_rx_raw_mag.x;
+        _vehicle_attitude.yaw = _buf_receive.payload_rx_raw_mag.z;
         ret = 1;
         break;
 
@@ -489,7 +495,60 @@ MatlabSim::payloadRxDone(void)
         //orb_publish_auto(ORB_ID(sensor_gyro), &_gyro_pub, &_sensor_gyro, &gyro_multi, ORB_PRIO_HIGH);
         ret = orb_publish(ORB_ID(sensor_gyro),_gyro_pub,&_sensor_gyro);
         //warnx("publish gyro");
-        ret = 1;
+        _vehicle_attitude.pitchspeed = _buf_receive.payload_rx_raw_gyro.y;
+        _vehicle_attitude.rollspeed = _buf_receive.payload_rx_raw_gyro.x;
+        _vehicle_attitude.yawspeed = _buf_receive.payload_rx_raw_gyro.z;
+
+
+        q.from_euler(_vehicle_attitude.roll,_vehicle_attitude.pitch,_vehicle_attitude.yaw);
+        _vehicle_attitude.q[0] = q(0);
+        _vehicle_attitude.q[1] = q(1);
+        _vehicle_attitude.q[2] = q(2);
+        _vehicle_attitude.q[3] = q(3);
+        _vehicle_attitude.q_valid = true;
+
+        R.from_euler(_vehicle_attitude.roll,_vehicle_attitude.pitch,_vehicle_attitude.yaw);
+        _vehicle_attitude.R[0] = R(0,0);
+        _vehicle_attitude.R[1] = R(0,1);
+        _vehicle_attitude.R[2] = R(0,2);
+        _vehicle_attitude.R[3] = R(1,0);
+        _vehicle_attitude.R[4] = R(1,1);
+        _vehicle_attitude.R[5] = R(1,2);
+        _vehicle_attitude.R[6] = R(2,0);
+        _vehicle_attitude.R[7] = R(2,1);
+        _vehicle_attitude.R[8] = R(2,2);
+        _vehicle_attitude.R_valid = true;
+
+        _vehicle_attitude.timestamp = hrt_absolute_time();
+
+        ret = orb_publish(ORB_ID(vehicle_attitude),_attitude_pub,&_vehicle_attitude);
+
+        _ctrl_state.timestamp = _vehicle_attitude.timestamp;
+
+        /* attitude quaternions for control state */
+        _ctrl_state.q[0] = _vehicle_attitude.q[0];
+        _ctrl_state.q[1] = _vehicle_attitude.q[1];
+        _ctrl_state.q[2] = _vehicle_attitude.q[2];
+        _ctrl_state.q[3] = _vehicle_attitude.q[3];
+
+        _ctrl_state.x_acc = _vehicle_attitude.pitchacc;
+        _ctrl_state.y_acc = _vehicle_attitude.rollacc;
+        _ctrl_state.z_acc = _vehicle_attitude.yawacc;
+
+        /* attitude rates for control state */
+        _ctrl_state.roll_rate = _vehicle_attitude.rollspeed;
+
+        _ctrl_state.pitch_rate = _vehicle_attitude.pitchspeed;
+
+        _ctrl_state.yaw_rate = _vehicle_attitude.yawspeed;
+
+        _ctrl_state.airspeed = _airspeed.indicated_airspeed_m_s;
+        _ctrl_state.airspeed_valid = true;
+
+
+        ret = orb_publish(ORB_ID(control_state), _ctrl_state_pub, &_ctrl_state);
+
+        //ret = 1;
         break;
 
     case SIM_MSG_RAW_BARO:
@@ -501,7 +560,6 @@ MatlabSim::payloadRxDone(void)
         //orb_publish_auto(ORB_ID(sensor_baro), &_baro_pub, &_sensor_baro, &baro_multi, ORB_PRIO_HIGH);
         ret = orb_publish(ORB_ID(sensor_baro),_baro_pub,&_sensor_baro);
         //warnx("publish baro");
-        ret = 1;
         break;
 
     case SIM_MSG_RAW_AIRSPEED:
@@ -514,6 +572,7 @@ MatlabSim::payloadRxDone(void)
         //orb_publish_auto(ORB_ID(airspeed), &_airspeed_pub, &_airspeed, &airspeed_multi, ORB_PRIO_HIGH);
         ret = orb_publish(ORB_ID(airspeed),_airspeed_pub,&_airspeed);
         //warnx("publish airspeed");
+
         ret = 1;
         break;
 
@@ -538,6 +597,7 @@ MatlabSim::payloadRxDone(void)
         //orb_publish_auto(ORB_ID(vehicle_gps_position), &_gps_pub, &_airspeed, &gps_multi, ORB_PRIO_HIGH);
         ret = orb_publish(ORB_ID(vehicle_gps_position),_gps_pub,&_vehicle_gps_position);
         //warnx("publish gps");
+
         ret = 1;
         break;
 
@@ -683,6 +743,8 @@ MatlabSim::task_main(int argc, char *argv[])
     _baro_pub = orb_advertise_multi(ORB_ID(sensor_baro), &_sensor_baro, &baro_multi, ORB_PRIO_HIGH);
     _airspeed_pub = orb_advertise_multi(ORB_ID(airspeed), &_airspeed, &airspeed_multi, ORB_PRIO_HIGH);
     _gps_pub = orb_advertise_multi(ORB_ID(vehicle_gps_position), &_vehicle_gps_position, &gps_multi, ORB_PRIO_HIGH);
+    _attitude_pub = orb_advertise_multi(ORB_ID(vehicle_attitude), &_vehicle_attitude, &att_inst, ORB_PRIO_HIGH);
+    _ctrl_state_pub = orb_advertise_multi(ORB_ID(control_state), &_ctrl_state, &ctrl_inst, ORB_PRIO_HIGH);
 
     while(!_task_should_exit)
     {
@@ -699,9 +761,10 @@ MatlabSim::task_main(int argc, char *argv[])
             _buf_send.payload_tx_raw_pwm_m.pwm4 = _actuator_outputs.output[3];
             _buf_send.payload_tx_raw_pwm_m.pwm5 = _actuator_outputs.output[4];
 
+            //warnx("pwm1 = %f",(double)_buf_receive.payload_tx_raw_pwm_m.pwm1);
+
             sendMessage(SIM_MSG_RAW_PWM_M,(uint8_t *)&_buf_send, sizeof(_buf_send.payload_tx_raw_pwm_m));
 
-            //warnx("pwm1 = %f",(double)_buf_receive.payload_tx_raw_pwm_m.pwm1);
         }
 
         if (copy_if_updated_multi(ORB_ID(actuator_outputs), 1, &act_outputs_1_sub, &_actuator_outputs_1)) {
