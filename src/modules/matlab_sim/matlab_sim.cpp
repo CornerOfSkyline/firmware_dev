@@ -797,6 +797,14 @@ MatlabSim::payloadRxDone(void)
         //orb_publish_auto(ORB_ID(sensor_gyro), &_gyro_pub, &_sensor_gyro, &gyro_multi, ORB_PRIO_HIGH);
         ret = orb_publish(ORB_ID(sensor_gyro),_gyro_pub,&_sensor_gyro);
         //warnx("publish gyro");
+
+        _sensor_baro.timestamp = hrt_absolute_time();
+        _sensor_baro.pressure = _buf_receive.payload_rx_raw_from_matlab.pressure;
+        _sensor_baro.altitude = _buf_receive.payload_rx_raw_from_matlab.altitude;
+        //orb_publish_auto(ORB_ID(sensor_baro), &_baro_pub, &_sensor_baro, &baro_multi, ORB_PRIO_HIGH);
+        ret = orb_publish(ORB_ID(sensor_baro),_baro_pub,&_sensor_baro);
+        //warnx("baro alt = %f",(double)_sensor_baro.altitude);
+
         _vehicle_attitude.pitchspeed = _buf_receive.payload_rx_raw_from_matlab.gyro_y;
         _vehicle_attitude.rollspeed = _buf_receive.payload_rx_raw_from_matlab.gyro_x;
         _vehicle_attitude.yawspeed = _buf_receive.payload_rx_raw_from_matlab.gyro_z;
