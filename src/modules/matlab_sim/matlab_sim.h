@@ -36,6 +36,8 @@ extern "C" __EXPORT int matlab_sim_main(int argc, char *argv[]);
 #define SIM_ID_RAW_GPS      	0x06
 #define SIM_ID_RAW_PWM_M      0x07
 #define SIM_ID_RAW_PWM_A      0x08
+#define SIM_ID_RAW_FROM_MATLAB  0x09
+#define SIM_ID_RAW_TO_MATALB    0x0A
 
 /* Message Classes & IDs */
 #define SIM_MSG_RAW_ACCEL              ((SIM_CLASS_RAW) | SIM_ID_RAW_ACCEL << 8)
@@ -46,6 +48,8 @@ extern "C" __EXPORT int matlab_sim_main(int argc, char *argv[]);
 #define SIM_MSG_RAW_GPS                   ((SIM_CLASS_RAW) | SIM_ID_RAW_GPS << 8)
 #define SIM_MSG_RAW_PWM_M                 ((SIM_CLASS_RAW) | SIM_ID_RAW_PWM_M << 8)
 #define SIM_MSG_RAW_PWM_A                 ((SIM_CLASS_RAW) | SIM_ID_RAW_PWM_A << 8)
+#define SIM_MSG_RAW_FROM_MATLAB           ((SIM_CLASS_RAW) | SIM_ID_RAW_FROM_MATLAB << 8)
+#define SIM_MSG_RAW_TO_MATLAB           ((SIM_CLASS_RAW) | SIM_ID_RAW_TO_MATALB << 8)
 
 /*** sim protocol binary message and payload definitions ***/
 #pragma pack(push, 1)
@@ -130,17 +134,60 @@ typedef struct {
     float pwm8;
 }sim_payload_tx_raw_pwm_t;
 
+/*Rx from matlab*/
+typedef struct{
+    float accel_x;
+    float accel_y;
+    float accel_z;
+    float gyro_x;
+    float gyro_y;
+    float gyro_z;
+    float mag_x;
+    float mag_y;
+    float mag_z;
+    float pressure;
+    float altitude;
+    float indicated_airspeed_m_s;
+    float true_airspeed_m_s;
+    int32_t lat;
+    int32_t lon;
+    int32_t alt;
+    uint16_t eph;
+    uint16_t epv;
+    uint16_t vel;
+    int16_t vn;
+    int16_t ve;
+    int16_t vd;
+    uint16_t cog;
+    uint8_t fix_type;
+    uint8_t satellites_visible;
+}sim_payload_rx_raw_from_matlab_t;
+
 /* General message and payload buffer union */
 typedef union {
-    sim_payload_rx_raw_accel_t		payload_rx_raw_accel;
-    sim_payload_rx_raw_gyro_t       payload_rx_raw_gyro;
-    sim_payload_rx_raw_mag_t        payload_rx_raw_mag;
-    sim_payload_rx_raw_baro_t       payload_rx_raw_baro;
-    sim_payload_rx_raw_airspeed_t   payload_rx_raw_airspeed;
-    sim_payload_rx_raw_gps_t        payload_rx_raw_gps;
-    sim_payload_tx_raw_pwm_t        payload_tx_raw_pwm_m;
-    sim_payload_tx_raw_pwm_t        payload_tx_raw_pwm_a;
+    sim_payload_rx_raw_accel_t          payload_rx_raw_accel;
+    sim_payload_rx_raw_gyro_t           payload_rx_raw_gyro;
+    sim_payload_rx_raw_mag_t            payload_rx_raw_mag;
+    sim_payload_rx_raw_baro_t           payload_rx_raw_baro;
+    sim_payload_rx_raw_airspeed_t       payload_rx_raw_airspeed;
+    sim_payload_rx_raw_gps_t            payload_rx_raw_gps;
+    sim_payload_tx_raw_pwm_t            payload_tx_raw_pwm_m;
+    sim_payload_tx_raw_pwm_t            payload_tx_raw_pwm_a;
+    sim_payload_rx_raw_from_matlab_t    payload_rx_raw_from_matlab;
 } sim_buf_t;
+
+/*send to matlab sim protocl*/
+typedef struct{
+    float main_pwm1;
+    float main_pwm2;
+    float main_pwm3;
+    float main_pwm4;
+    float main_pwm5;
+    float aux_pwm1;
+    float aux_pwm2;
+    float aux_pwm3;
+    float aux_pwm4;
+}sim_tx_to_matlab;
 
 #pragma pack(pop)
 /*** END OF sim protocol binary message and payload definitions ***/
@@ -155,7 +202,8 @@ typedef enum {
     SIM_DECODE_LENGTH2,
     SIM_DECODE_PAYLOAD,
     SIM_DECODE_CHKSUM1,
-    SIM_DECODE_CHKSUM2
+    SIM_DECODE_CHKSUM2,
+    SIM_DECODE_CHECKTERMIN
 } sim_decode_state_t;
 
 /* Rx message state */
@@ -198,6 +246,11 @@ private:
     int payloadRxAdd(const uint8_t b);
 
     /**
+     * Add payload rx from matlab byte
+     */
+    int payloadRxAddFromMatlab(const uint8_t b);
+
+    /**
      * Finish payload rx
      */
     int payloadRxDone(void);
@@ -220,6 +273,8 @@ private:
 
     int read(uint8_t *buf, int buf_length, int timeout);
 
+    bool sendtoMatlab(const uint8_t *payload, const uint16_t length);
+
     int write(const void *buf, int buf_length);
 
     bool copy_if_updated_multi(orb_id_t topic, int multi_instance, int *handle, void *buffer);
@@ -238,6 +293,7 @@ private:
     int             _sim_task;
     uint16_t		_rx_msg;
     sim_rxmsg_state_t	_rx_state;
+    sim_tx_to_matlab _to_matlab;
 
     // uORB publisher handlers
     orb_advert_t _accel_pub;
